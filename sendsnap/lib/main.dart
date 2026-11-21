@@ -66,6 +66,7 @@ class SendSnapApp extends StatefulWidget {
 
 class _SendSnapAppState extends State<SendSnapApp> {
   bool _syncSetup = false;
+  bool _isPushingTransferRoute = false;
   final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
 
   @override
@@ -98,6 +99,10 @@ class _SendSnapAppState extends State<SendSnapApp> {
 
   void _setupSynchronization(DeviceProvider devProv, TransferProvider transProv) {
     // Wire up nearby service callbacks to transfer provider
+    devProv.nearbyService.onIncomingTransferBatch = (sessionId, sender, files) {
+      transProv.handleIncomingBatch(sender, files, sessionId: sessionId);
+    };
+
     devProv.nearbyService.onIncomingTransfer = (sender, transfer) {
       transProv.handleIncomingTransfer(sender, transfer);
     };
@@ -125,14 +130,19 @@ class _SendSnapAppState extends State<SendSnapApp> {
       );
     };
 
-    // Auto-navigate receiver to transfer screen when an incoming transfer starts
+    // Auto-navigate receiver to transfer screen once when an incoming batch starts
     transProv.onTransferStarted = () {
-      debugPrint('[SendSnapApp] Transfer started — navigating to transfer screen');
+      debugPrint('[SendSnapApp] Transfer started — ensuring transfer screen is visible');
       if (TrayAndWindowService.isDesktop) {
         TrayAndWindowService.instance.showWindow();
       }
+      if (transProv.isTransferRouteOpen || _isPushingTransferRoute) return;
+      _isPushingTransferRoute = true;
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        _navigatorKey.currentState?.pushNamed('/transfer');
+        _isPushingTransferRoute = false;
+        if (!transProv.isTransferRouteOpen) {
+          _navigatorKey.currentState?.pushNamed('/transfer');
+        }
       });
     };
 

@@ -6,6 +6,7 @@ import 'package:path/path.dart' as p;
 import '../models/device.dart';
 import '../models/transfer.dart';
 import 'file_handler.dart';
+import 'network_info_service.dart';
 
 typedef TransferRequestCallback = Future<bool> Function({
   required String sessionId,
@@ -140,6 +141,8 @@ class HttpTransferServer {
       'id': _localDevice?.id ?? '',
       'name': _localDevice?.name ?? 'SendSnap Device',
       'port': _server?.port ?? defaultPort,
+      'deviceType': _localDevice?.deviceType ?? NetworkInfoService.getPlatformName(),
+      'serviceId': _localDevice?.serviceId ?? 'com.the356company.sendsnap',
       'protocol': 'sendsnap-v1',
     }));
     await request.response.close();
@@ -160,6 +163,7 @@ class HttpTransferServer {
         fileName: f['name'] as String,
         fileSize: f['size'] as int,
         status: TransferStatus.pending,
+        isIncoming: true,
       );
     }).toList();
 

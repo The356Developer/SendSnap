@@ -11,6 +11,7 @@ class FileTransfer {
   final String? savedPath; // Receiver side
   final String? filePath;  // Sender side
   final double speed;      // bytes per second
+  final bool isIncoming;
 
   FileTransfer({
     required this.id,
@@ -23,7 +24,10 @@ class FileTransfer {
     this.savedPath,
     this.filePath,
     this.speed = 0.0,
+    this.isIncoming = false,
   }) : createdAt = createdAt ?? DateTime.now();
+
+  String? get localPath => savedPath ?? filePath;
 
   double get progress => fileSize == 0 ? 0 : (transferredBytes / fileSize).clamp(0.0, 1.0);
 
@@ -44,6 +48,7 @@ class FileTransfer {
     String? savedPath,
     String? filePath,
     double? speed,
+    bool? isIncoming,
   }) {
     return FileTransfer(
       id: id ?? this.id,
@@ -56,6 +61,7 @@ class FileTransfer {
       savedPath: savedPath ?? this.savedPath,
       filePath: filePath ?? this.filePath,
       speed: speed ?? this.speed,
+      isIncoming: isIncoming ?? this.isIncoming,
     );
   }
 
@@ -70,6 +76,7 @@ class FileTransfer {
     'savedPath': savedPath,
     'filePath': filePath,
     'speed': speed,
+    'isIncoming': isIncoming,
   };
 
   factory FileTransfer.fromJson(Map<String, dynamic> json) => FileTransfer(
@@ -83,5 +90,7 @@ class FileTransfer {
     savedPath: json['savedPath'] as String?,
     filePath: json['filePath'] as String?,
     speed: (json['speed'] as num?)?.toDouble() ?? 0.0,
+    isIncoming: json['isIncoming'] as bool? ??
+        (json['savedPath'] != null && json['filePath'] == null),
   );
 }

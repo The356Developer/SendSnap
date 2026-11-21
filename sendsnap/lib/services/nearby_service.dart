@@ -6,11 +6,13 @@ import '../models/device.dart';
 import '../models/transfer.dart';
 import 'network_info_service.dart';
 import 'discovery_service.dart';
+import 'direct_p2p_service.dart';
 import 'http_transfer_server.dart';
 import 'http_transfer_client.dart';
 
 class NearbyService {
   final DiscoveryService _discoveryService = DiscoveryService();
+  final DirectP2pService _directP2p = DirectP2pService();
   final HttpTransferServer _httpServer = HttpTransferServer();
   final HttpTransferClient _httpClient = HttpTransferClient();
 
@@ -18,16 +20,27 @@ class NearbyService {
   NearbyDevice? _localDevice;
   String? _deviceId;
 
+  bool _isAdvertising = false;
+  bool _isActiveDiscovering = false;
+  bool _isWarmDiscovering = false;
+  DirectHotspotInfo? _activeHotspotInfo;
+  Timer? _p2pCleanupTimer;
+
   // Callbacks for DeviceProvider
   Function(NearbyDevice)? onDeviceFound;
   Function(String)? onDeviceLost;
   Function(String, String)? onConnectionInitiated; // endpointId, deviceName
-  Function(String, bool)? onConnectionResult;     // endpointId, success
+  Function(String, bool)? onConnectionResult; // endpointId, success
   Function(String)? onDisconnected;
+  Function(DirectHotspotInfo?)? onHotspotInfoChanged;
+  Function(bool)? onWifiStateChanged;
 
   // Callbacks for TransferProvider
   Function(NearbyDevice sender, FileTransfer transfer)? onIncomingTransfer;
-  Function(String transferId, int bytesTransferred, int totalBytes, double speed)? onTransferProgress;
+  Function(String sessionId, NearbyDevice sender, List<FileTransfer> files)?
+      onIncomingTransferBatch;
+  Function(String transferId, int bytesTransferred, int totalBytes, double speed)?
+      onTransferProgress;
   Function(String transferId, String savedPath)? onTransferCompleted;
   Function(String transferId, String error)? onTransferFailed;
   Function(Map<String, dynamic> event)? onPortalEvent;
@@ -35,23 +48,134 @@ class NearbyService {
   NearbyDevice? get localDevice => _localDevice;
   HttpTransferServer get httpServer => _httpServer;
   HttpTransferClient get httpClient => _httpClient;
+  DirectP2pService get directP2p => _directP2p;
+  DirectHotspotInfo? get activeHotspotInfo => _activeHotspotInfo;
+  bool get isWarmDiscovering => _isWarmDiscovering;
 
   NearbyService() {
     _deviceId = const Uuid().v4().substring(0, 8);
+    _directP2p.initialize();
     _setupDiscoveryCallbacks();
+    _setupDirectP2pCallbacks();
     _setupServerCallbacks();
   }
 
   void _setupDiscoveryCallbacks() {
     _discoveryService.onDeviceFound = (device) {
-      _knownDevices[device.id] = device;
-      onDeviceFound?.call(device);
+      if (device.id == _deviceId) return;
+      _mergeDiscoveredDevice(device);
     };
 
     _discoveryService.onDeviceLost = (deviceId) {
-      _knownDevices.remove(deviceId);
-      onDeviceLost?.call(deviceId);
+      final existing = _knownDevices[deviceId];
+      if (existing == null) return;
+      if (existing.hasDirectCredentials &&
+          DateTime.now().difference(existing.lastSeen).inSeconds < 30) {
+        // Demote to Wi-Fi Direct so cross-Wi-Fi fallback stays available
+        final demoted = existing.copyWith(
+          ip: '',
+          connectionType: 'wifi_direct',
+        );
+        _knownDevices[deviceId] = demoted;
+        onDeviceFound?.call(demoted);
+      } else {
+        _knownDevices.remove(deviceId);
+        onDeviceLost?.call(deviceId);
+      }
     };
+  }
+
+  void _setupDirectP2pCallbacks() {
+    _directP2p.onNsdDeviceFound = (device) {
+      if (device.id == _deviceId) return;
+      _mergeDiscoveredDevice(device);
+    };
+
+    _directP2p.onNsdDeviceLost = (deviceId) async {
+      final existing = _knownDevices[deviceId];
+      if (existing == null) return;
+      if (existing.hasLanIp) {
+        final alive = await _httpClient.ping(
+          existing.ip,
+          existing.port,
+          timeout: const Duration(milliseconds: 800),
+        );
+        if (alive != null) return;
+      }
+      if (!existing.hasDirectCredentials) {
+        _knownDevices.remove(deviceId);
+        onDeviceLost?.call(deviceId);
+      }
+    };
+
+    _directP2p.onWifiDirectDeviceFound = (device) {
+      if (device.id == _deviceId) return;
+      _mergeDiscoveredDevice(device);
+    };
+
+    _directP2p.onDirectHotspotReady = (hotspot) {
+      _activeHotspotInfo = hotspot;
+      onHotspotInfoChanged?.call(hotspot);
+    };
+
+    _directP2p.onDirectConnectionChanged = (connected, goIp) {
+      debugPrint('[NearbyService] Direct connection changed: connected=$connected goIp=$goIp');
+    };
+
+    _directP2p.onWifiStateChanged = (enabled) {
+      onWifiStateChanged?.call(enabled);
+    };
+  }
+
+  void _mergeDiscoveredDevice(NearbyDevice incoming) {
+    if (incoming.id.isEmpty || incoming.id == _deviceId) return;
+
+    final existing = _knownDevices[incoming.id];
+    late NearbyDevice merged;
+
+    if (existing == null) {
+      merged = incoming.copyWith(lastSeen: DateTime.now());
+    } else if (incoming.connectionType == 'lan' && incoming.hasLanIp) {
+      // LAN / NSD / Sweep takes priority over Wi-Fi Direct while preserving P2P fallback info
+      merged = incoming.copyWith(
+        name: incoming.name != 'Unknown' ? incoming.name : existing.name,
+        deviceType: incoming.deviceType != 'unknown'
+            ? incoming.deviceType
+            : existing.deviceType,
+        connectionType: 'lan',
+        p2pDeviceAddress: incoming.p2pDeviceAddress ?? existing.p2pDeviceAddress,
+        p2pSsid: incoming.p2pSsid ?? existing.p2pSsid,
+        p2pPassphrase: incoming.p2pPassphrase ?? existing.p2pPassphrase,
+        p2pGoIp: incoming.p2pGoIp ?? existing.p2pGoIp,
+        lastSeen: DateTime.now(),
+      );
+    } else if (incoming.isWifiDirect) {
+      final recentLan = existing.connectionType == 'lan' &&
+          existing.hasLanIp &&
+          DateTime.now().difference(existing.lastSeen).inSeconds < 12;
+      if (recentLan) {
+        merged = existing.copyWith(
+          p2pDeviceAddress: incoming.p2pDeviceAddress ?? existing.p2pDeviceAddress,
+          p2pSsid: incoming.p2pSsid ?? existing.p2pSsid,
+          p2pPassphrase: incoming.p2pPassphrase ?? existing.p2pPassphrase,
+          p2pGoIp: incoming.p2pGoIp ?? existing.p2pGoIp,
+          lastSeen: DateTime.now(),
+        );
+      } else {
+        merged = incoming.copyWith(
+          name: incoming.name != 'Unknown' ? incoming.name : existing.name,
+          deviceType: incoming.deviceType != 'unknown'
+              ? incoming.deviceType
+              : existing.deviceType,
+          lastSeen: DateTime.now(),
+        );
+      }
+    } else {
+      merged = incoming.copyWith(lastSeen: DateTime.now());
+    }
+
+    _knownDevices[merged.id] = merged;
+    onDeviceFound?.call(merged);
   }
 
   void _setupServerCallbacks() {
@@ -60,12 +184,18 @@ class NearbyService {
       required NearbyDevice sender,
       required List<FileTransfer> files,
     }) async {
-      debugPrint('[NearbyService] Incoming transfer request from ${sender.name} (${files.length} files)');
+      debugPrint(
+        '[NearbyService] Incoming transfer request from ${sender.name} (${files.length} files)',
+      );
       _knownDevices[sender.id] = sender;
       onConnectionInitiated?.call(sender.id, sender.name);
 
-      for (final file in files) {
-        onIncomingTransfer?.call(sender, file);
+      if (onIncomingTransferBatch != null) {
+        onIncomingTransferBatch!(sessionId, sender, files);
+      } else {
+        for (final file in files) {
+          onIncomingTransfer?.call(sender, file);
+        }
       }
 
       onConnectionResult?.call(sender.id, true);
@@ -117,47 +247,201 @@ class NearbyService {
     return _localDevice!;
   }
 
-  /// Start receiving mode (Embedded HTTP Server + Discovery Broadcast).
+  void _ensureP2pCleanupTimer() {
+    _p2pCleanupTimer?.cancel();
+    _p2pCleanupTimer = Timer.periodic(const Duration(seconds: 8), (_) async {
+      final now = DateTime.now();
+      final entries = _knownDevices.entries.toList();
+      for (final entry in entries) {
+        if (!entry.value.isWifiDirect) continue;
+        if (now.difference(entry.value.lastSeen).inSeconds <= 35) continue;
+
+        if (entry.value.hasLanIp) {
+          final alive = await _httpClient.ping(
+            entry.value.ip,
+            entry.value.port,
+            timeout: const Duration(milliseconds: 900),
+          );
+          if (alive != null) {
+            _knownDevices[entry.key] = entry.value.copyWith(lastSeen: DateTime.now());
+            continue;
+          }
+        }
+
+        _knownDevices.remove(entry.key);
+        onDeviceLost?.call(entry.key);
+      }
+    });
+  }
+
+  /// Starts low-overhead background discovery on HomeScreen launch so receivers
+  /// appear immediately before the user finishes picking files.
+  Future<bool> startWarmDiscovery(String deviceName) async {
+    if (_isAdvertising || _isActiveDiscovering) return true;
+    try {
+      final local = await _ensureLocalDevice(deviceName);
+      _isWarmDiscovering = true;
+
+      await _discoveryService.startDiscovery(
+        localDevice: local,
+        isReceiver: false,
+        isPassive: true,
+      );
+      await _directP2p.startNsdDiscovery(localId: local.id);
+      await _directP2p.startWifiDirectDiscovery(isPassive: true);
+      _ensureP2pCleanupTimer();
+
+      debugPrint('[NearbyService] Warm discovery active for ${local.name}');
+      return true;
+    } catch (e) {
+      debugPrint('[NearbyService] startWarmDiscovery error: $e');
+      return false;
+    }
+  }
+
+  /// Immediately boosts discovery cadence while the user is picking files.
+  Future<void> boostWarmDiscovery() async {
+    if (_isAdvertising) return;
+    try {
+      NetworkInfoService.invalidateCache();
+      if (_localDevice != null) {
+        final ip = await NetworkInfoService.getLocalIpAddress() ?? '0.0.0.0';
+        _localDevice = _localDevice!.copyWith(ip: ip);
+        _discoveryService.updateLocalDevice(_localDevice!);
+      }
+      await _discoveryService.triggerBurst();
+      await _directP2p.startWifiDirectDiscovery(isPassive: false);
+    } catch (e) {
+      debugPrint('[NearbyService] boostWarmDiscovery note: $e');
+    }
+  }
+
+  /// Pauses warm discovery when app enters background (only if idle).
+  Future<void> pauseWarmDiscovery() async {
+    if (!_isWarmDiscovering || _isAdvertising || _isActiveDiscovering) return;
+    _isWarmDiscovering = false;
+    _p2pCleanupTimer?.cancel();
+    _p2pCleanupTimer = null;
+    await _discoveryService.stopDiscovery();
+    await _directP2p.stopNsdDiscovery();
+    await _directP2p.stopWifiDirectDiscovery();
+  }
+
+  /// Promotes warm discovery in-place to active Send mode without clearing
+  /// already-discovered devices or recreating sockets.
+  Future<bool> promoteToActiveDiscovery(String deviceName) async {
+    try {
+      final local = await _ensureLocalDevice(deviceName);
+      if (_isAdvertising) {
+        await stopAll(disconnectDirect: false);
+      }
+
+      _isActiveDiscovering = true;
+      _isWarmDiscovering = false;
+
+      if (_discoveryService.isRunning) {
+        _discoveryService.updateLocalDevice(local);
+        _discoveryService.setPassiveMode(false);
+      } else {
+        await _discoveryService.startDiscovery(
+          localDevice: local,
+          isReceiver: false,
+          isPassive: false,
+        );
+      }
+
+      await _directP2p.startNsdDiscovery(localId: local.id);
+      await _directP2p.startWifiDirectDiscovery(isPassive: false);
+      _ensureP2pCleanupTimer();
+
+      debugPrint('[NearbyService] Active discovery running for ${local.name}');
+      return true;
+    } catch (e) {
+      debugPrint('[NearbyService] promoteToActiveDiscovery error: $e');
+      return false;
+    }
+  }
+
+  /// Start receiving mode (Embedded HTTP Server + LAN UDP/NSD + Android Direct Wi-Fi GO).
   Future<bool> startAdvertising(String deviceName) async {
     try {
       debugPrint('[NearbyService] Starting advertising as $deviceName...');
+      await _stopDiscoveryOnly();
+      _knownDevices.clear();
+
       final local = await _ensureLocalDevice(deviceName);
 
-      // Start embedded HTTP server
+      // 1. Start embedded HTTP server on 0.0.0.0:53318
       final boundPort = await _httpServer.startServer(localDevice: local);
       if (boundPort == null) {
         debugPrint('[NearbyService] Failed to start HTTP server');
         return false;
       }
 
+      _isAdvertising = true;
+      _isActiveDiscovering = false;
+      _isWarmDiscovering = false;
       _localDevice = local.copyWith(port: boundPort);
 
-      // Start discovery announcements
-      final discoveryOk = await _discoveryService.startDiscovery(localDevice: _localDevice!);
-      debugPrint('[NearbyService] Advertising active on ${_localDevice!.ip}:$boundPort (discovery=$discoveryOk)');
-      return discoveryOk;
+      // 2. Start LAN UDP broadcast / multicast announcements
+      final discoveryOk = await _discoveryService.startDiscovery(
+        localDevice: _localDevice!,
+        isReceiver: true,
+        isPassive: false,
+      );
+
+      // 3. Register Android NSD (_sendsnap._tcp.)
+      await _directP2p.startNsdAdvertising(
+        id: _localDevice!.id,
+        name: _localDevice!.name,
+        port: boundPort,
+        deviceType: _localDevice!.deviceType,
+      );
+
+      // 4. Start Android Wi-Fi Direct Group Owner + DNS-SD service (works without router!)
+      final directOk = await _directP2p.startWifiDirectAdvertising(
+        id: _localDevice!.id,
+        name: _localDevice!.name,
+        port: boundPort,
+      );
+
+      debugPrint(
+        '[NearbyService] Advertising active on ${_localDevice!.ip}:$boundPort (lan=$discoveryOk, direct=$directOk)',
+      );
+      return true;
     } catch (e) {
       debugPrint('[NearbyService] Advertising error: $e');
       return false;
     }
   }
 
-  /// Start sending mode (Listen for receiving devices on Wi-Fi).
+  /// Start sending mode (Listen for receiving devices on Wi-Fi & Direct Wi-Fi).
   Future<bool> startDiscovery(String deviceName) async {
-    try {
-      debugPrint('[NearbyService] Starting discovery for $deviceName...');
-      final local = await _ensureLocalDevice(deviceName);
-      return await _discoveryService.startDiscovery(localDevice: local);
-    } catch (e) {
-      debugPrint('[NearbyService] Discovery error: $e');
-      return false;
-    }
+    return promoteToActiveDiscovery(deviceName);
   }
 
-  Future<void> stopAll() async {
+  Future<void> _stopDiscoveryOnly() async {
+    _isActiveDiscovering = false;
+    _isWarmDiscovering = false;
+    _p2pCleanupTimer?.cancel();
+    _p2pCleanupTimer = null;
+    await _discoveryService.stopDiscovery();
+    await _directP2p.stopNsdDiscovery();
+    await _directP2p.stopWifiDirectDiscovery();
+  }
+
+  Future<void> stopAll({bool disconnectDirect = true}) async {
     try {
-      await _discoveryService.stopDiscovery();
+      _isAdvertising = false;
+      await _stopDiscoveryOnly();
       await _httpServer.stopServer();
+      await _directP2p.stopNsdAdvertising();
+      await _directP2p.stopWifiDirectAdvertising();
+      if (disconnectDirect) {
+        await _directP2p.disconnectDirect();
+      }
+      _activeHotspotInfo = null;
+      onHotspotInfoChanged?.call(null);
       _knownDevices.clear();
       debugPrint('[NearbyService] Stopped all services');
     } catch (e) {
@@ -173,6 +457,7 @@ class NearbyService {
   }
 
   /// Request connection/handshake with a discovered target device.
+  /// Automatically establishes a Direct Wi-Fi link if LAN IP is unavailable/unreachable.
   Future<bool> requestConnection(String deviceName, String endpointId) async {
     final target = _knownDevices[endpointId];
     if (target == null) {
@@ -182,15 +467,142 @@ class NearbyService {
 
     try {
       onConnectionInitiated?.call(endpointId, target.name);
-      final pingDevice = await _httpClient.ping(target.ip, target.port);
-      final success = pingDevice != null;
-      onConnectionResult?.call(endpointId, success);
-      return success;
+
+      // 1. Try direct LAN ping first when a LAN IP is known
+      if (target.hasLanIp && !target.isWifiDirect) {
+        final pingDevice = await _httpClient.ping(target.ip, target.port);
+        if (pingDevice != null) {
+          final updated = pingDevice.copyWith(
+            connectionType: 'lan',
+            p2pDeviceAddress: target.p2pDeviceAddress,
+            p2pSsid: target.p2pSsid,
+            p2pPassphrase: target.p2pPassphrase,
+            p2pGoIp: target.p2pGoIp,
+            lastSeen: DateTime.now(),
+          );
+          _knownDevices[endpointId] = updated;
+          onDeviceFound?.call(updated);
+          onConnectionResult?.call(endpointId, true);
+          return true;
+        }
+      }
+
+      // 2. Automatic cross-Wi-Fi Direct connect on Android
+      if (Platform.isAndroid &&
+          (target.hasDirectCredentials || target.p2pDeviceAddress != null)) {
+        final connectRes = await _directP2p.connectToPeer(
+          ssid: target.p2pSsid,
+          passphrase: target.p2pPassphrase,
+          deviceAddress: target.p2pDeviceAddress,
+          goIp: target.p2pGoIp,
+        );
+        if (connectRes.success && connectRes.goIp != null) {
+          NetworkInfoService.invalidateCache();
+          final pingDevice =
+              await _httpClient.pingWithRetry(connectRes.goIp!, target.port);
+          if (pingDevice != null) {
+            final updated = target.copyWith(
+              name: pingDevice.name,
+              ip: connectRes.goIp!,
+              port: target.port,
+              deviceType: pingDevice.deviceType != 'unknown'
+                  ? pingDevice.deviceType
+                  : target.deviceType,
+              connectionType: target.connectionType,
+              lastSeen: DateTime.now(),
+            );
+            _knownDevices[endpointId] = updated;
+            onDeviceFound?.call(updated);
+            onConnectionResult?.call(endpointId, true);
+            return true;
+          }
+        }
+      }
+
+      onConnectionResult?.call(endpointId, false);
+      return false;
     } catch (e) {
       debugPrint('[NearbyService] requestConnection error: $e');
       onConnectionResult?.call(endpointId, false);
       return false;
     }
+  }
+
+  /// Parses an enriched or legacy QR code and connects via LAN or Direct Wi-Fi auto-join.
+  Future<NearbyDevice?> connectFromQrData(String rawQr) async {
+    final parsed = DirectP2pService.parseQrPayload(rawQr);
+    if (parsed == null) return null;
+
+    // 1. Fast LAN ping first if QR contains a router IP
+    if (parsed.hasUsableLanIp) {
+      final lanDevice = await _httpClient.ping(
+        parsed.lanIp!,
+        parsed.port,
+        timeout: const Duration(milliseconds: 900),
+      );
+      if (lanDevice != null) {
+        final enriched = lanDevice.copyWith(
+          connectionType: 'lan',
+          p2pSsid: parsed.ssid,
+          p2pPassphrase: parsed.passphrase,
+          p2pGoIp: parsed.p2pIp,
+          lastSeen: DateTime.now(),
+        );
+        addManualDevice(enriched);
+        return enriched;
+      }
+    }
+
+    // 2. Auto-join Direct Wi-Fi / Hotspot on Android if credentials are embedded
+    if (Platform.isAndroid && parsed.hasDirectCredentials) {
+      final res = await _directP2p.connectToPeer(
+        ssid: parsed.ssid,
+        passphrase: parsed.passphrase,
+        goIp: parsed.p2pIp,
+      );
+      if (res.success) {
+        final targetIp = res.goIp ?? parsed.p2pIp ?? '192.168.49.1';
+        NetworkInfoService.invalidateCache();
+        final directDev = await _httpClient.pingWithRetry(targetIp, parsed.port);
+        if (directDev != null) {
+          final enriched = directDev.copyWith(
+            ip: targetIp,
+            port: parsed.port,
+            connectionType: 'wifi_direct',
+            p2pSsid: parsed.ssid,
+            p2pPassphrase: parsed.passphrase,
+            p2pGoIp: targetIp,
+            lastSeen: DateTime.now(),
+          );
+          addManualDevice(enriched);
+          return enriched;
+        }
+      }
+    }
+
+    // 3. Fallback direct ping to p2pIp if device already manually joined receiver's hotspot
+    if (parsed.p2pIp != null &&
+        parsed.p2pIp!.isNotEmpty &&
+        parsed.p2pIp != parsed.lanIp) {
+      final directPing = await _httpClient.ping(
+        parsed.p2pIp!,
+        parsed.port,
+        timeout: const Duration(milliseconds: 900),
+      );
+      if (directPing != null) {
+        final enriched = directPing.copyWith(
+          connectionType: 'wifi_direct',
+          p2pSsid: parsed.ssid,
+          p2pPassphrase: parsed.passphrase,
+          p2pGoIp: parsed.p2pIp,
+          lastSeen: DateTime.now(),
+        );
+        addManualDevice(enriched);
+        return enriched;
+      }
+    }
+
+    return null;
   }
 
   Future<void> acceptConnection(String endpointId) async {
@@ -248,6 +660,8 @@ class NearbyService {
       final f = files[i];
       final t = transfers[i];
 
+      onTransferProgress?.call(t.id, 0, t.fileSize, 0.0);
+
       final ok = await _httpClient.uploadFile(
         target: target,
         sessionId: sessionId,
@@ -262,6 +676,12 @@ class NearbyService {
         onTransferCompleted?.call(t.id, f.path);
       } else {
         onTransferFailed?.call(t.id, 'Connection lost during transfer');
+        for (int j = i + 1; j < transfers.length; j++) {
+          onTransferFailed?.call(
+            transfers[j].id,
+            'Transfer cancelled after connection error',
+          );
+        }
         allOk = false;
         break;
       }

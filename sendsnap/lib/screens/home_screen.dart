@@ -12,7 +12,6 @@ import '../services/permission_service.dart';
 import '../config/constants.dart';
 import '../models/device.dart';
 import '../widgets/radar_widget.dart';
-import '../widgets/banner_ad_widget.dart';
 import '../widgets/glass_container.dart';
 import '../widgets/bouncing_card.dart';
 import '../widgets/ambient_background.dart';
@@ -25,6 +24,7 @@ import '../widgets/network_status_pill.dart';
 import '../widgets/network_diagnostics_sheet.dart';
 import '../widgets/device_avatar.dart';
 import '../services/portal_stream_client.dart';
+import '../services/direct_p2p_service.dart';
 import '../services/file_handler.dart';
 import 'package:desktop_drop/desktop_drop.dart';
 import 'package:file_picker/file_picker.dart';
@@ -40,7 +40,7 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
+class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   List<File> _selectedFiles = [];
   String _incomingGhostFileName = '';
   double _incomingGhostPenetration = 0.0;
@@ -55,6 +55,7 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     if (widget.initialFiles != null && widget.initialFiles!.isNotEmpty) {
       _selectedFiles = List.from(widget.initialFiles!);
     }
@@ -66,10 +67,13 @@ class _HomeScreenState extends State<HomeScreen> {
       }
     });
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
       final devProv = Provider.of<DeviceProvider>(context, listen: false);
       devProv.onPortalEvent = _handleIncomingPortalEvent;
       if (_selectedFiles.isNotEmpty && !devProv.isDiscovering) {
-        devProv.toggleDiscovery();
+        devProv.startActiveDiscovery();
+      } else {
+        devProv.initWarmDiscovery();
       }
       if (Platform.isAndroid) {
         _checkAndroidSharedFiles();
@@ -78,7 +82,14 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (!mounted) return;
+    Provider.of<DeviceProvider>(context, listen: false).onAppLifecycleChanged(state);
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _discoveryTimer?.cancel();
     _portalClient.disconnect();
     super.dispose();
@@ -149,7 +160,7 @@ class _HomeScreenState extends State<HomeScreen> {
               });
               final devProv = Provider.of<DeviceProvider>(context, listen: false);
               if (!devProv.isDiscovering) {
-                devProv.toggleDiscovery();
+                devProv.startActiveDiscovery();
               }
             }
           }
@@ -169,7 +180,7 @@ class _HomeScreenState extends State<HomeScreen> {
           });
           final devProv = Provider.of<DeviceProvider>(context, listen: false);
           if (!devProv.isDiscovering) {
-            devProv.toggleDiscovery();
+            devProv.startActiveDiscovery();
           }
         }
       }
@@ -243,7 +254,7 @@ class _HomeScreenState extends State<HomeScreen> {
               _selectedFiles = detail.files.map((x) => File(x.path)).toList();
             });
             if (_selectedFiles.isNotEmpty && !devProv.isDiscovering) {
-              devProv.toggleDiscovery();
+              devProv.startActiveDiscovery();
             }
           },
           child: Stack(
@@ -278,7 +289,6 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                     ),
                   ),
-                  const BannerAdWidget(),
                 ],
               ),
             ),
@@ -294,7 +304,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     }
                     _activeHoveredDevice = target;
                   }
-                  if (target != null && _selectedFiles.isNotEmpty) {
+                  if (target != null && _selectedFiles.isNotEmpty && target.hasLanIp && !target.isWifiDirect) {
                     _portalClient.connect(target.ip, port: target.port);
                     _portalClient.sendDragMove(
                       fileName: p.basename(_selectedFiles.first.path),
@@ -872,8 +882,8 @@ class _HomeScreenState extends State<HomeScreen> {
           ],
         ],
 
-        // Receiver IP Glass Card
-        if (devProv.isAdvertising && devProv.localIp != null) ...[
+        // Receiver IP & Direct Wi-Fi Glass Card
+        if (devProv.isAdvertising) ...[
           const SizedBox(height: AppSpacing.l),
           GlassContainer(
             blur: 20,
@@ -890,30 +900,41 @@ class _HomeScreenState extends State<HomeScreen> {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(
-                        color: AppColors.success.withValues(alpha: 0.15),
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Icon(Icons.wifi_tethering, size: 22, color: AppColors.success),
-                    ),
-                    const SizedBox(width: 14),
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text('RECEIVER STATUS', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: AppColors.textSecondary, letterSpacing: 0.8)),
-                        const SizedBox(height: 2),
-                        const Text(
-                          'Ready to Receive',
-                          style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15, color: AppColors.textPrimary),
+                Expanded(
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: AppColors.success.withValues(alpha: 0.15),
+                          shape: BoxShape.circle,
                         ),
-                      ],
-                    ),
-                  ],
+                        child: const Icon(Icons.wifi_tethering, size: 22, color: AppColors.success),
+                      ),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text('RECEIVER STATUS', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: AppColors.textSecondary, letterSpacing: 0.8)),
+                            const SizedBox(height: 2),
+                            const Text(
+                              'Ready to Receive',
+                              style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15, color: AppColors.textPrimary),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              _getReceiverTransportLabel(devProv),
+                              style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: AppColors.success),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
+                const SizedBox(width: 10),
                 BouncingCard(
                   onTap: () => _showReceiverQrCode(context, devProv),
                   child: Container(
@@ -1087,7 +1108,7 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
           const SizedBox(height: 8),
           const Text(
-            'Cannot find the other device? Make sure both devices are on the same Wi-Fi, have SendSnap open, and AP isolation is disabled.',
+            'Cannot find the other device? Make sure both devices have Wi-Fi turned ON and SendSnap open. Android devices auto-discover via Direct Wi-Fi even without a shared router.',
             style: TextStyle(
               fontSize: 11.5,
               color: AppColors.textSecondary,
@@ -1167,7 +1188,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _buildDeviceDiscovery(BuildContext context, DeviceProvider devProv, TransferProvider transProv) {
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         const Padding(
           padding: EdgeInsets.symmetric(horizontal: 4, vertical: 6),
@@ -1181,17 +1202,15 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ),
         ),
-        const SizedBox(height: 8),
-        SizedBox(
-          height: 120,
-          child: ListView.builder(
-            scrollDirection: Axis.horizontal,
-            physics: const BouncingScrollPhysics(),
-            itemCount: devProv.nearbyDevices.length,
-            itemBuilder: (context, index) {
-              final device = devProv.nearbyDevices[index];
-              return _buildDeviceItem(context, device, devProv, transProv);
-            },
+        const SizedBox(height: 4),
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          physics: const BouncingScrollPhysics(),
+          padding: const EdgeInsets.symmetric(vertical: 4),
+          child: Row(
+            children: devProv.nearbyDevices
+                .map((device) => _buildDeviceItem(context, device, devProv, transProv))
+                .toList(),
           ),
         ),
       ],
@@ -1233,6 +1252,7 @@ class _HomeScreenState extends State<HomeScreen> {
               child: SizedBox(
                 width: 112,
                 child: Column(
+                  mainAxisSize: MainAxisSize.min,
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     DeviceAvatar(device: device, size: 48),
@@ -1250,7 +1270,11 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      isTargeted ? 'Drop to send' : _getDeviceFriendlySubtitle(device.deviceType),
+                      isTargeted
+                          ? 'Drop to send'
+                          : (device.isWifiDirect
+                              ? '${_getDeviceFriendlySubtitle(device.deviceType)} • Direct'
+                              : _getDeviceFriendlySubtitle(device.deviceType)),
                       style: TextStyle(
                         fontSize: 10,
                         color: isTargeted ? AppColors.primary : AppColors.textSecondary,
@@ -1267,6 +1291,16 @@ class _HomeScreenState extends State<HomeScreen> {
         );
       },
     );
+  }
+
+  String _getReceiverTransportLabel(DeviceProvider devProv) {
+    final hasLan = devProv.hasLanIp;
+    final hasDirect =
+        devProv.activeHotspotInfo != null && devProv.activeHotspotInfo!.isValid;
+    if (hasLan && hasDirect) return 'Wi-Fi + Direct Wi-Fi Active';
+    if (hasDirect) return 'Direct Wi-Fi Ready (No router needed)';
+    if (hasLan) return 'LAN Wi-Fi Active';
+    return 'Starting Direct Wi-Fi...';
   }
 
   String _getDeviceFriendlySubtitle(String type) {
@@ -1327,104 +1361,191 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _showReceiverQrCode(BuildContext context, DeviceProvider devProv) {
-    final ip = devProv.localIp ?? '';
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
-      builder: (ctx) => BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-        child: Container(
-          decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.88),
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(36)),
-            border: Border.all(color: Colors.white, width: 1.5),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.1),
-                blurRadius: 30,
-                offset: const Offset(0, -10),
+      builder: (ctx) => Consumer<DeviceProvider>(
+        builder: (_, liveDevProv, _) {
+          final ip = liveDevProv.localIp ?? '';
+          final hasIp = liveDevProv.hasLanIp;
+          final hotspot = liveDevProv.activeHotspotInfo;
+          final hasDirect = hotspot != null && hotspot.isValid;
+          final qrData = DirectP2pService.buildQrPayload(
+            lanIp: hasIp ? ip : null,
+            port: liveDevProv.nearbyService.httpServer.port ?? 53318,
+            hotspot: hotspot,
+            deviceId: liveDevProv.nearbyService.localDevice?.id,
+            deviceName: liveDevProv.displayName,
+          );
+
+          return BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+            child: Container(
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.88),
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(36)),
+                border: Border.all(color: Colors.white, width: 1.5),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.1),
+                    blurRadius: 30,
+                    offset: const Offset(0, -10),
+                  ),
+                ],
               ),
-            ],
-          ),
-          padding: const EdgeInsets.all(AppSpacing.xl),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 44,
-                height: 5,
-                decoration: BoxDecoration(
-                  color: Colors.grey.withValues(alpha: 0.3),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-              ),
-              const SizedBox(height: 24),
-              const Text(
-                'Scan to Connect',
-                style: TextStyle(
-                  fontSize: 22,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: -0.5,
-                  color: AppColors.textPrimary,
-                ),
-              ),
-              const SizedBox(height: 6),
-              Text(
-                'Connect directly to ${devProv.displayName}',
-                style: const TextStyle(color: AppColors.textSecondary, fontSize: 14),
-              ),
-              const SizedBox(height: 24),
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(24),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.08),
-                      blurRadius: 20,
-                      offset: const Offset(0, 8),
+              padding: const EdgeInsets.all(AppSpacing.xl),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 44,
+                    height: 5,
+                    decoration: BoxDecoration(
+                      color: Colors.grey.withValues(alpha: 0.3),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  const Text(
+                    'Scan to Connect',
+                    style: TextStyle(
+                      fontSize: 22,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: -0.5,
+                      color: AppColors.textPrimary,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    'Connect directly to ${liveDevProv.displayName}',
+                    style: const TextStyle(color: AppColors.textSecondary, fontSize: 14),
+                  ),
+                  if (hasDirect) ...[
+                    const SizedBox(height: 10),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+                      decoration: BoxDecoration(
+                        color: AppColors.success.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.bolt_rounded, size: 14, color: AppColors.success),
+                          SizedBox(width: 4),
+                          Text(
+                            'Direct Wi-Fi Auto-Join Ready',
+                            style: TextStyle(
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.success,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ],
-                ),
-                child: SizedBox(
-                  height: 180,
-                  width: 180,
-                  child: QrImageView(
-                    data: 'sendsnap://$ip:53318',
-                    version: QrVersions.auto,
+                  const SizedBox(height: 20),
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(24),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.08),
+                          blurRadius: 20,
+                          offset: const Offset(0, 8),
+                        ),
+                      ],
+                    ),
+                    child: SizedBox(
+                      height: 180,
+                      width: 180,
+                      child: QrImageView(
+                        data: qrData,
+                        version: QrVersions.auto,
+                      ),
+                    ),
                   ),
-                ),
+                  const SizedBox(height: 16),
+                  if (hasIp)
+                    GestureDetector(
+                      onTap: () {
+                        Clipboard.setData(ClipboardData(text: ip));
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('IP address copied to clipboard!'), duration: Duration(seconds: 2)),
+                        );
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.04),
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(ip, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: AppColors.textPrimary)),
+                            const SizedBox(width: 8),
+                            const Icon(Icons.copy_rounded, size: 14, color: AppColors.textSecondary),
+                          ],
+                        ),
+                      ),
+                    ),
+                  if (hasDirect) ...[
+                    const SizedBox(height: 10),
+                    GestureDetector(
+                      onTap: () {
+                        Clipboard.setData(ClipboardData(text: hotspot.passphrase));
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Direct Wi-Fi password copied!'),
+                            duration: Duration(seconds: 2),
+                          ),
+                        );
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: AppColors.primary.withValues(alpha: 0.08),
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.wifi_lock_rounded, size: 14, color: AppColors.primary),
+                            const SizedBox(width: 6),
+                            Flexible(
+                              child: Text(
+                                '${hotspot.ssid}  •  ${hotspot.passphrase}',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 12,
+                                  color: AppColors.primary,
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+                            const Icon(Icons.copy_rounded, size: 13, color: AppColors.primary),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ] else if (!hasIp) ...[
+                    const Text(
+                      'Initializing Direct Wi-Fi hotspot...',
+                      style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                    ),
+                  ],
+                  const SizedBox(height: 20),
+                ],
               ),
-              const SizedBox(height: 16),
-              GestureDetector(
-                onTap: () {
-                  Clipboard.setData(ClipboardData(text: ip));
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('IP address copied to clipboard!'), duration: Duration(seconds: 2)),
-                  );
-                },
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: Colors.black.withValues(alpha: 0.04),
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(ip, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: AppColors.textPrimary)),
-                      const SizedBox(width: 8),
-                      const Icon(Icons.copy_rounded, size: 14, color: AppColors.textSecondary),
-                    ],
-                  ),
-                ),
-              ),
-              const SizedBox(height: 24),
-            ],
-          ),
-        ),
+            ),
+          );
+        },
       ),
     );
   }
@@ -1521,23 +1642,15 @@ class _HomeScreenState extends State<HomeScreen> {
     final scannedCode = await QrScannerSheet.show(context);
     if (scannedCode == null || scannedCode.isEmpty) return;
 
-    // Parse sendsnap://<ip>:<port> or http://<ip>:<port> or <ip>:<port>
-    String host = scannedCode.trim();
-    int port = 53318;
-    if (host.startsWith('sendsnap://')) host = host.substring('sendsnap://'.length);
-    if (host.startsWith('http://')) host = host.substring('http://'.length);
-    if (host.contains(':')) {
-      final parts = host.split(':');
-      host = parts[0];
-      port = int.tryParse(parts[1].split('/')[0]) ?? port;
-    }
-
     if (!mounted) return;
     messenger.showSnackBar(
-      SnackBar(content: Text('Connecting to $host:$port...'), duration: const Duration(seconds: 1)),
+      const SnackBar(
+        content: Text('Connecting (auto-joining Direct Wi-Fi if needed)...'),
+        duration: Duration(seconds: 2),
+      ),
     );
 
-    final targetDevice = await devProv.connectAndGetDevice(host, port: port);
+    final targetDevice = await devProv.connectFromQr(scannedCode);
     if (!mounted) return;
 
     if (targetDevice != null) {
@@ -1554,8 +1667,8 @@ class _HomeScreenState extends State<HomeScreen> {
       }
     } else {
       messenger.showSnackBar(
-        SnackBar(
-          content: Text('Could not reach device at $host:$port. Make sure both devices are on the same Wi-Fi.'),
+        const SnackBar(
+          content: Text('Could not reach device. Make sure Wi-Fi is turned ON on both devices.'),
           backgroundColor: AppColors.error,
         ),
       );
@@ -1563,6 +1676,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _handleSend(BuildContext context, DeviceProvider devProv, TransferProvider transProv) async {
+    unawaited(devProv.boostWarmDiscovery());
     List<File>? selected;
 
     if (!Platform.isAndroid && !Platform.isIOS) {
@@ -1587,7 +1701,7 @@ class _HomeScreenState extends State<HomeScreen> {
         _selectedFiles = selected!;
       });
       if (!devProv.isDiscovering) {
-        devProv.toggleDiscovery();
+        devProv.startActiveDiscovery();
       }
     }
   }
@@ -1633,7 +1747,11 @@ class _HomeScreenState extends State<HomeScreen> {
         : List<File>.from(_selectedFiles);
     if (filesToSend.isEmpty) return;
     
-    _showConnectingSheet(context, target.endpointName);
+    _showConnectingSheet(
+      context,
+      target.endpointName,
+      isDirect: target.isWifiDirect,
+    );
 
     final scaffoldMessenger = ScaffoldMessenger.of(context);
     final nav = Navigator.of(context);
@@ -1644,26 +1762,33 @@ class _HomeScreenState extends State<HomeScreen> {
     }
 
     if (connected) {
+      final resolvedTarget = devProv.nearbyService.getDevice(target.endpointId) ?? target;
       // Remove only the files being sent, preserving any remaining files!
       final sentPaths = filesToSend.map((f) => f.path).toSet();
       setState(() {
         _selectedFiles.removeWhere((f) => sentPaths.contains(f.path));
       });
-      if (mounted) {
-        nav.pushNamed('/transfer').then((_) {
+      if (mounted && !transProv.isTransferRouteOpen) {
+        nav.pushNamed('/transfer').then((result) {
           if (!mounted) return;
+          if (result == 'main_menu') {
+            setState(() {
+              _selectedFiles.clear();
+            });
+            return;
+          }
           // Keep discovery active so the user can continue dropping remaining files
           if (_selectedFiles.isNotEmpty && !devProv.isDiscovering) {
-            devProv.toggleDiscovery();
+            devProv.startActiveDiscovery();
           }
         });
       }
-      await transProv.sendFiles(target, filesToSend, devProv.nearbyService);
+      await transProv.sendFiles(resolvedTarget, filesToSend, devProv.nearbyService);
     } else {
       if (mounted) {
         scaffoldMessenger.showSnackBar(
           const SnackBar(
-            content: Text('Failed to connect to device. Make sure both devices are on the same Wi-Fi or hotspot.'),
+            content: Text('Failed to connect to device. Ensure Wi-Fi is turned ON on both devices and try again.'),
             backgroundColor: AppColors.error,
           ),
         );
@@ -1671,7 +1796,7 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  void _showConnectingSheet(BuildContext context, String deviceName) {
+  void _showConnectingSheet(BuildContext context, String deviceName, {bool isDirect = false}) {
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
@@ -1695,7 +1820,10 @@ class _HomeScreenState extends State<HomeScreen> {
                 style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
               ),
               const SizedBox(height: 6),
-              const Text('Connecting over local Wi-Fi...', style: TextStyle(color: AppColors.textSecondary, fontSize: 13)),
+              Text(
+                isDirect ? 'Establishing Direct Wi-Fi link...' : 'Connecting over local Wi-Fi...',
+                style: const TextStyle(color: AppColors.textSecondary, fontSize: 13),
+              ),
             ],
           ),
         ),
@@ -1707,6 +1835,10 @@ class _HomeScreenState extends State<HomeScreen> {
     if (transProv.activeTransfer == null) return const SizedBox.shrink();
     
     final transfer = transProv.activeTransfer!;
+    final batchCount = transProv.currentBatchTransfers.length;
+    final statusTitle = batchCount > 1
+        ? '${transfer.fileName} (${transProv.completedBatchCount}/$batchCount)'
+        : transfer.fileName;
     return SafeArea(
       child: Container(
         margin: const EdgeInsets.all(16),
@@ -1730,7 +1862,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      transfer.fileName,
+                      statusTitle,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
@@ -1739,7 +1871,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     ClipRRect(
                       borderRadius: BorderRadius.circular(4),
                       child: LinearProgressIndicator(
-                        value: transfer.progress,
+                        value: transProv.batchProgress,
                         minHeight: 6,
                         backgroundColor: AppColors.primary.withValues(alpha: 0.12),
                         valueColor: const AlwaysStoppedAnimation<Color>(AppColors.primary),
@@ -1790,11 +1922,16 @@ class _HomeScreenState extends State<HomeScreen> {
               backgroundColor: AppColors.error,
               duration: const Duration(seconds: 5),
               action: SnackBarAction(
-                label: 'SETTINGS',
+                label: devProv.lastErrorIsWifiOff ? 'TURN ON WI-FI' : 'SETTINGS',
                 textColor: Colors.white,
                 onPressed: () {
+                  final wifiOff = devProv.lastErrorIsWifiOff;
                   devProv.clearError();
-                  PermissionService().openSettings();
+                  if (wifiOff) {
+                    devProv.openWifiSettings();
+                  } else {
+                    PermissionService().openSettings();
+                  }
                 },
               ),
             ),

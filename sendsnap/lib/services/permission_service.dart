@@ -5,8 +5,7 @@ import 'package:permission_handler/permission_handler.dart';
 
 /// Manages runtime permissions for SendSnap.
 class PermissionService {
-  /// Request essential permissions (Storage / Media).
-  /// Network discovery operates over local Wi-Fi without requiring location or Bluetooth.
+  /// Request essential permissions (Storage / Media & Nearby Wi-Fi for Direct Discovery).
   Future<bool> requestAllPermissions() async {
     final results = <Permission, PermissionStatus>{};
 
@@ -23,6 +22,9 @@ class PermissionService {
       } else {
         results[Permission.storage] = await Permission.storage.request();
       }
+
+      // Request Nearby Wi-Fi / Location permission (non-blocking: LAN still works if declined)
+      await requestNearbyWifiPermission();
     }
 
     for (final entry in results.entries) {
@@ -30,6 +32,38 @@ class PermissionService {
     }
 
     return true;
+  }
+
+  /// Checks whether the required permission for Wi-Fi Direct / Nearby Wi-Fi discovery is granted.
+  Future<bool> hasNearbyWifiPermission() async {
+    if (!Platform.isAndroid) return true;
+    final androidVersion = await _getAndroidVersion();
+    if (androidVersion >= 33) {
+      return await Permission.nearbyWifiDevices.isGranted;
+    }
+    return await Permission.locationWhenInUse.isGranted;
+  }
+
+  /// Requests Nearby Wi-Fi permission (API 33+: NEARBY_WIFI_DEVICES, API <=32: Location).
+  Future<bool> requestNearbyWifiPermission() async {
+    if (!Platform.isAndroid) return true;
+    try {
+      final androidVersion = await _getAndroidVersion();
+      if (androidVersion >= 33) {
+        if (await Permission.nearbyWifiDevices.isGranted) return true;
+        final status = await Permission.nearbyWifiDevices.request();
+        debugPrint('[SendSnap] Permission nearbyWifiDevices: $status');
+        return status.isGranted;
+      } else {
+        if (await Permission.locationWhenInUse.isGranted) return true;
+        final status = await Permission.locationWhenInUse.request();
+        debugPrint('[SendSnap] Permission locationWhenInUse: $status');
+        return status.isGranted;
+      }
+    } catch (e) {
+      debugPrint('[SendSnap] requestNearbyWifiPermission error: $e');
+      return false;
+    }
   }
 
   /// Check if we have storage read permission.
@@ -77,10 +111,9 @@ class PermissionService {
     return true;
   }
 
-  /// Check if network transfer permissions are ready.
+  /// Check if network transfer / Wi-Fi Direct permissions are ready.
   Future<bool> hasNearbyConnectionsPermissions() async {
-    // Wi-Fi HTTP + UDP discovery does not require GPS or Bluetooth
-    return true;
+    return await hasNearbyWifiPermission();
   }
 
   /// Location check (not strictly required for local Wi-Fi, returns true).

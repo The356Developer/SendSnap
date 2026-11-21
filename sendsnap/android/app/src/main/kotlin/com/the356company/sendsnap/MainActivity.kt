@@ -23,8 +23,12 @@ import java.io.FileOutputStream
 class MainActivity : FlutterActivity() {
 
     private val CHANNEL = "com.the356company.sendsnap/file_utils"
+    private val DIRECT_P2P_CHANNEL = "com.the356company.sendsnap/direct_p2p"
     private var multicastLock: WifiManager.MulticastLock? = null
     private var sharedFilePaths: ArrayList<String> = ArrayList()
+    private var wifiDirectManager: WifiDirectManager? = null
+    private var nsdManager: NsdDiscoveryManager? = null
+    private var directP2pChannel: MethodChannel? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -530,9 +534,161 @@ class MainActivity : FlutterActivity() {
                 else -> result.notImplemented()
             }
         }
+
+        setupDirectP2pChannel(flutterEngine)
+    }
+
+    private fun setupDirectP2pChannel(flutterEngine: FlutterEngine) {
+        val channel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, DIRECT_P2P_CHANNEL)
+        directP2pChannel = channel
+
+        val directMgr = wifiDirectManager ?: WifiDirectManager(applicationContext).also {
+            wifiDirectManager = it
+        }
+        val nsdMgr = nsdManager ?: NsdDiscoveryManager(applicationContext).also {
+            nsdManager = it
+        }
+
+        directMgr.onPeerFound = { peerMap ->
+            runOnUiThread {
+                directP2pChannel?.invokeMethod("onWifiDirectDeviceFound", peerMap)
+            }
+        }
+        directMgr.onHotspotReady = { hotspotMap ->
+            runOnUiThread {
+                directP2pChannel?.invokeMethod("onDirectHotspotReady", hotspotMap)
+            }
+        }
+        directMgr.onConnectionChanged = { connected, goIp ->
+            runOnUiThread {
+                directP2pChannel?.invokeMethod(
+                    "onDirectConnectionChanged",
+                    mapOf("connected" to connected, "goIp" to (goIp ?: ""))
+                )
+            }
+        }
+        directMgr.onWifiStateChanged = { enabled ->
+            runOnUiThread {
+                directP2pChannel?.invokeMethod("onWifiStateChanged", enabled)
+            }
+        }
+
+        channel.setMethodCallHandler { call, result ->
+            when (call.method) {
+                "getDirectStatus" -> {
+                    result.success(directMgr.getStatus())
+                }
+                "openWifiPanel" -> {
+                    result.success(directMgr.openWifiPanel(this))
+                }
+                "startNsdAdvertising" -> {
+                    val id = call.argument<String>("id") ?: ""
+                    val name = call.argument<String>("name") ?: "SendSnap Device"
+                    val port = call.argument<Int>("port") ?: 53318
+                    val deviceType = call.argument<String>("deviceType") ?: "android"
+                    if (id.isEmpty()) {
+                        result.success(false)
+                    } else {
+                        nsdMgr.registerService(id, name, port, deviceType)
+                        result.success(true)
+                    }
+                }
+                "stopNsdAdvertising" -> {
+                    nsdMgr.unregisterService()
+                    result.success(true)
+                }
+                "startNsdDiscovery" -> {
+                    val localId = call.argument<String>("localId") ?: ""
+                    nsdMgr.startDiscovery(
+                        localId = localId,
+                        onFound = { deviceMap ->
+                            runOnUiThread {
+                                directP2pChannel?.invokeMethod("onNsdDeviceFound", deviceMap)
+                            }
+                        },
+                        onLost = { lostId ->
+                            runOnUiThread {
+                                directP2pChannel?.invokeMethod("onNsdDeviceLost", lostId)
+                            }
+                        }
+                    )
+                    result.success(true)
+                }
+                "stopNsdDiscovery" -> {
+                    nsdMgr.stopDiscovery()
+                    result.success(true)
+                }
+                "startWifiDirectAdvertising" -> {
+                    val id = call.argument<String>("id") ?: ""
+                    val name = call.argument<String>("name") ?: "SendSnap Device"
+                    val port = call.argument<Int>("port") ?: 53318
+                    var replied = false
+                    directMgr.startAdvertising(id, name, port) { success, error ->
+                        runOnUiThread {
+                            if (!replied) {
+                                replied = true
+                                result.success(mapOf("success" to success, "error" to (error ?: "")))
+                            }
+                        }
+                    }
+                }
+                "stopWifiDirectAdvertising" -> {
+                    directMgr.stopAdvertising()
+                    result.success(true)
+                }
+                "startWifiDirectDiscovery" -> {
+                    val isPassive = call.argument<Boolean>("isPassive") ?: false
+                    result.success(directMgr.startDiscovery(isPassive))
+                }
+                "setWifiDirectDiscoveryPace" -> {
+                    val isPassive = call.argument<Boolean>("isPassive") ?: false
+                    directMgr.setDiscoveryPace(isPassive)
+                    result.success(true)
+                }
+                "stopWifiDirectDiscovery" -> {
+                    directMgr.stopDiscovery()
+                    result.success(true)
+                }
+                "connectWifiDirectPeer" -> {
+                    val ssid = call.argument<String>("ssid")
+                    val passphrase = call.argument<String>("passphrase")
+                    val deviceAddress = call.argument<String>("deviceAddress")
+                    val goIp = call.argument<String>("goIp")
+                    var replied = false
+                    directMgr.connectToPeer(ssid, passphrase, deviceAddress, goIp) { success, ip, error ->
+                        runOnUiThread {
+                            if (!replied) {
+                                replied = true
+                                result.success(
+                                    mapOf(
+                                        "success" to success,
+                                        "goIp" to (ip ?: ""),
+                                        "error" to (error ?: "")
+                                    )
+                                )
+                            }
+                        }
+                    }
+                }
+                "disconnectWifiDirect" -> {
+                    directMgr.disconnectDirect()
+                    result.success(true)
+                }
+                else -> result.notImplemented()
+            }
+        }
     }
 
     override fun onDestroy() {
+        try {
+            wifiDirectManager?.dispose()
+            wifiDirectManager = null
+        } catch (_: Exception) {}
+        try {
+            nsdManager?.dispose()
+            nsdManager = null
+        } catch (_: Exception) {}
+        directP2pChannel = null
         try {
             if (multicastLock?.isHeld == true) {
                 multicastLock?.release()

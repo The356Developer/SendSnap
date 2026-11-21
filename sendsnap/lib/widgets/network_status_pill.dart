@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../config/constants.dart';
@@ -7,7 +8,7 @@ import 'bouncing_card.dart';
 import 'network_diagnostics_sheet.dart';
 
 /// A sleek, interactive network status pill.
-/// Shows current Wi-Fi/P2P status and opens the Network Diagnostics Sheet on tap.
+/// Shows current Wi-Fi / Direct Wi-Fi status and opens the Network Diagnostics Sheet on tap.
 class NetworkStatusPill extends StatefulWidget {
   final DeviceProvider devProv;
 
@@ -42,11 +43,34 @@ class _NetworkStatusPillState extends State<NetworkStatusPill>
     super.dispose();
   }
 
+  String _buildLabel(bool hasLan, bool hasDirect) {
+    String base;
+    if (hasLan && hasDirect) {
+      base = 'Wi-Fi + Direct Ready';
+    } else if (hasLan) {
+      base = 'Wi-Fi Connected';
+    } else if (hasDirect) {
+      base = 'Direct Wi-Fi Ready';
+    } else {
+      return Platform.isAndroid
+          ? 'Turn On Wi-Fi (Tap)'
+          : 'No Wi-Fi (Tap for help)';
+    }
+
+    if (!widget.devProv.isAdvertising && widget.devProv.warmDiscoveredCount > 0) {
+      return '$base • ${widget.devProv.warmDiscoveredCount} nearby';
+    }
+    return base;
+  }
+
   @override
   Widget build(BuildContext context) {
-    final ip = widget.devProv.localIp;
-    final isConnected = ip != null && ip != '0.0.0.0' && ip.isNotEmpty;
-    final dotColor = isConnected ? AppColors.success : AppColors.warning;
+    final hasLan = widget.devProv.hasLanIp;
+    final hasDirect = widget.devProv.hasDirectWifiReady;
+    final isReady = hasLan || hasDirect;
+    final dotColor = hasLan
+        ? AppColors.success
+        : (hasDirect ? AppColors.primary : AppColors.warning);
 
     return BouncingCard(
       onTap: () {
@@ -81,7 +105,9 @@ class _NetworkStatusPillState extends State<NetworkStatusPill>
                     color: dotColor,
                     boxShadow: [
                       BoxShadow(
-                        color: dotColor.withValues(alpha: 0.4 + (_pulseAnimation.value * 0.4)),
+                        color: dotColor.withValues(
+                          alpha: 0.4 + (_pulseAnimation.value * 0.4),
+                        ),
                         blurRadius: 6 + (_pulseAnimation.value * 4),
                         spreadRadius: 1,
                       ),
@@ -94,11 +120,11 @@ class _NetworkStatusPillState extends State<NetworkStatusPill>
 
             // Network Info Text
             Text(
-              isConnected ? 'Wi-Fi Connected' : 'No Wi-Fi (Tap for help)',
+              _buildLabel(hasLan, hasDirect),
               style: TextStyle(
                 fontSize: 12,
                 fontWeight: FontWeight.w600,
-                color: isConnected ? AppColors.textSecondary : AppColors.warning,
+                color: isReady ? AppColors.textSecondary : AppColors.warning,
               ),
             ),
             const SizedBox(width: 6),
@@ -107,7 +133,7 @@ class _NetworkStatusPillState extends State<NetworkStatusPill>
             Icon(
               Icons.info_outline_rounded,
               size: 13,
-              color: isConnected ? AppColors.textSecondary : AppColors.warning,
+              color: isReady ? AppColors.textSecondary : AppColors.warning,
             ),
           ],
         ),

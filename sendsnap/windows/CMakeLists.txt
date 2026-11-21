@@ -57,6 +57,13 @@ add_subdirectory("runner")
 # them to the application.
 include(flutter/generated_plugins.cmake)
 
+# Visual Studio 2026 (MSVC 14.51+) deprecates <experimental/coroutine> used by
+# permission_handler_windows (CppWinRT 2.0 + /await). Suppress STL1011 on that plugin target.
+if(TARGET permission_handler_windows_plugin)
+  target_compile_definitions(permission_handler_windows_plugin PRIVATE
+    _SILENCE_EXPERIMENTAL_COROUTINE_DEPRECATION_WARNINGS)
+endif()
+
 
 # === Installation ===
 # Support files are copied into place next to the executable, so that it can

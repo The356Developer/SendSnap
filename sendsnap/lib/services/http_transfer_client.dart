@@ -12,25 +12,76 @@ class HttpTransferClient {
     sendTimeout: const Duration(minutes: 60),
   ));
 
-  /// Tests connectivity to a target device IP and port.
-  Future<NearbyDevice?> ping(String ip, int port) async {
+  final Dio _pingDio = Dio(BaseOptions(
+    connectTimeout: const Duration(milliseconds: 1200),
+    receiveTimeout: const Duration(milliseconds: 1200),
+    sendTimeout: const Duration(milliseconds: 1200),
+  ));
+
+  /// Fast raw TCP reachability probe before doing HTTP `/api/v1/info`.
+  /// Fails within [connectTimeout] (~350ms) when a port is closed or unreachable.
+  Future<NearbyDevice?> fastProbe(
+    String ip,
+    int port, {
+    Duration connectTimeout = const Duration(milliseconds: 350),
+  }) async {
+    Socket? socket;
     try {
-      final response = await _dio.get(
-        'http://$ip:$port/api/v1/info',
-        options: Options(responseType: ResponseType.json),
-      );
+      socket = await Socket.connect(ip, port, timeout: connectTimeout);
+      socket.destroy();
+      socket = null;
+      return await ping(ip, port);
+    } catch (_) {
+      socket?.destroy();
+      return null;
+    }
+  }
+
+  /// Tests connectivity to a target device IP and port.
+  Future<NearbyDevice?> ping(String ip, int port, {Duration? timeout}) async {
+    try {
+      final effectiveTimeout = timeout ?? const Duration(milliseconds: 1200);
+      final response = await _pingDio
+          .get(
+            'http://$ip:$port/api/v1/info',
+            options: Options(
+              responseType: ResponseType.json,
+              receiveTimeout: effectiveTimeout,
+              sendTimeout: effectiveTimeout,
+            ),
+          )
+          .timeout(effectiveTimeout + const Duration(milliseconds: 300));
       if (response.statusCode == 200 && response.data is Map) {
         final data = response.data as Map<String, dynamic>;
         return NearbyDevice(
           id: data['id'] as String? ?? 'remote-$ip',
           name: data['name'] as String? ?? 'Device ($ip)',
           ip: ip,
-          port: port,
+          port: (data['port'] as num?)?.toInt() ?? port,
+          deviceType: data['deviceType'] as String? ?? 'unknown',
+          serviceId: data['serviceId'] as String? ?? 'com.the356company.sendsnap',
           lastSeen: DateTime.now(),
         );
       }
     } catch (e) {
       debugPrint('[HttpClient] Ping to $ip:$port failed: $e');
+    }
+    return null;
+  }
+
+  /// Repeatedly probes an IP after establishing a fresh Direct Wi-Fi / hotspot route.
+  Future<NearbyDevice?> pingWithRetry(
+    String ip,
+    int port, {
+    int maxAttempts = 8,
+    Duration retryDelay = const Duration(milliseconds: 450),
+  }) async {
+    for (int attempt = 0; attempt < maxAttempts; attempt++) {
+      final device = await ping(ip, port, timeout: const Duration(milliseconds: 1200));
+      if (device != null) return device;
+      if (attempt < maxAttempts - 1) {
+        await Future.delayed(retryDelay);
+      }
     }
     return null;
   }

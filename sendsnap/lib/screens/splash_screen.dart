@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import '../services/permission_service.dart';
-import '../services/ads_service.dart';
 import '../config/constants.dart';
 import '../widgets/ambient_background.dart';
 
@@ -37,16 +36,13 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
   }
 
   Future<void> _initApp() async {
-    // 1. Initialize Ads
-    await AdsService().initialize();
-
-    // 2. Request Permissions
+    // 1. Request Permissions
     await PermissionService().requestAllPermissions();
 
     // Small delay for smooth splash transition
     await Future.delayed(const Duration(milliseconds: 500));
 
-    // 3. Navigate to Home
+    // 2. Navigate to Home
     if (mounted) {
       Navigator.pushReplacementNamed(context, '/home');
     }
