@@ -411,29 +411,29 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                             ),
                             borderColor:
                                 AppColors.primary.withValues(alpha: 0.5),
-                            child: const Column(
+                            child: Column(
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                Icon(
+                                const Icon(
                                   Icons.file_download_rounded,
                                   size: 52,
                                   color: AppColors.primary,
                                 ),
-                                SizedBox(height: 12),
+                                const SizedBox(height: 12),
                                 Text(
                                   'Drop files to share',
                                   style: TextStyle(
                                     fontSize: 18,
                                     fontWeight: FontWeight.w700,
-                                    color: AppColors.textPrimary,
+                                    color: AppColors.textPrimaryOf(context),
                                   ),
                                 ),
-                                SizedBox(height: 4),
+                                const SizedBox(height: 4),
                                 Text(
                                   'Release files to discover nearby devices',
                                   style: TextStyle(
                                     fontSize: 12,
-                                    color: AppColors.textSecondary,
+                                    color: AppColors.textSecondaryOf(context),
                                   ),
                                 ),
                               ],
@@ -674,10 +674,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                             ),
                           ),
                           IconButton(
-                            icon: const Icon(
+                            icon: Icon(
                               Icons.close_rounded,
                               size: 20,
-                              color: AppColors.textSecondary,
+                              color: AppColors.textSecondaryOf(context),
                             ),
                             onPressed: () => Navigator.pop(dialogCtx),
                           ),
@@ -738,7 +738,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                                         color: isSelected
                                             ? Colors.white
                                                 .withValues(alpha: 0.8)
-                                            : AppColors.textSecondary,
+                                            : AppColors.textSecondaryOf(context),
                                       ),
                                     ),
                                   if (isSelected) ...[
@@ -877,10 +877,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                       ),
                     ),
                   ),
-                  const Icon(
+                  Icon(
                     Icons.chevron_right_rounded,
                     size: 20,
-                    color: AppColors.textSecondary,
+                    color: AppColors.textSecondaryOf(context),
                   ),
                 ],
               ),
@@ -1400,10 +1400,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                                   BidiHelper.isolate(devProv.localIp!),
                                   maxLines: 1,
                                   softWrap: false,
-                                  style: const TextStyle(
+                                  style: TextStyle(
                                     fontSize: 12,
                                     fontWeight: FontWeight.w600,
-                                    color: AppColors.textSecondary,
+                                    color: AppColors.textSecondaryOf(context),
                                   ),
                                 ),
                               ),
@@ -1563,11 +1563,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           ),
           if (_isSearchHelpExpanded) ...[
             const SizedBox(height: 10),
-            const Text(
+            Text(
               'Make sure Wi-Fi is on and the other device tapped Receive, or connect directly below:',
               style: TextStyle(
                 fontSize: 11.5,
-                color: AppColors.textSecondary,
+                color: AppColors.textSecondaryOf(context),
                 height: 1.35,
               ),
             ),
@@ -1672,15 +1672,15 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const Padding(
-          padding: EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
           child: Text(
             'DISCOVERED DEVICES',
             style: TextStyle(
               fontSize: 11,
               fontWeight: FontWeight.w800,
               letterSpacing: 1.2,
-              color: AppColors.textSecondary,
+              color: AppColors.textSecondaryOf(context),
             ),
           ),
         ),
@@ -1784,7 +1784,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                         fontSize: 10.5,
                         color: isTargeted
                             ? AppColors.primary
-                            : AppColors.textSecondary,
+                            : AppColors.textSecondaryOf(context),
                         fontWeight:
                             isTargeted ? FontWeight.w700 : FontWeight.w600,
                       ),
@@ -1927,8 +1927,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                   Text(
                     l10n?.homeConnectDirectly(liveDevProv.displayName) ??
                         'Connect directly to ${liveDevProv.displayName}',
-                    style: const TextStyle(
-                      color: AppColors.textSecondary,
+                    style: TextStyle(
+                      color: AppColors.textSecondaryOf(context),
                       fontSize: 13.5,
                     ),
                   ),
@@ -1992,10 +1992,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                               ),
                             ),
                             const SizedBox(width: 8),
-                            const Icon(
+                            Icon(
                               Icons.copy_rounded,
                               size: 14,
-                              color: AppColors.textSecondary,
+                              color: AppColors.textSecondaryOf(context),
                             ),
                           ],
                         ),
@@ -2031,22 +2031,32 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           ),
           title: Text(
             AppLocalizations.of(context)?.homeConnectManual ?? 'Connect by IP',
-            style: const TextStyle(fontWeight: FontWeight.w800),
+            style: TextStyle(
+              fontWeight: FontWeight.w800,
+              color: AppColors.textPrimaryOf(context),
+            ),
           ),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
+              Text(
                 'Enter the IP shown on the receiver:',
-                style: TextStyle(fontSize: 13, color: AppColors.textSecondary),
+                style: TextStyle(
+                  fontSize: 13,
+                  color: AppColors.textSecondaryOf(context),
+                ),
               ),
               const SizedBox(height: 14),
               TextField(
                 controller: controller,
                 autofocus: true,
+                style: TextStyle(color: AppColors.textPrimaryOf(context)),
                 decoration: InputDecoration(
                   hintText: 'e.g. 192.168.1.45',
+                  hintStyle: TextStyle(
+                    color: AppColors.textSecondaryOf(context),
+                  ),
                   filled: true,
                   fillColor: (isDark ? Colors.white : Colors.black)
                       .withValues(alpha: 0.05),
@@ -2054,7 +2064,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                     borderRadius: BorderRadius.circular(16),
                     borderSide: BorderSide.none,
                   ),
-                  prefixIcon: const Icon(Icons.wifi_rounded, size: 20),
+                  prefixIcon: Icon(
+                    Icons.wifi_rounded,
+                    size: 20,
+                    color: AppColors.textSecondaryOf(context),
+                  ),
                 ),
                 keyboardType: TextInputType.datetime,
               ),
@@ -2306,8 +2320,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               Text(
                 AppLocalizations.of(context)?.transferConnecting(deviceName) ??
                     'Connecting to $deviceName...',
-                style:
-                    const TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.textPrimaryOf(context),
+                ),
               ),
             ],
           ),
@@ -2347,9 +2364,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                       statusTitle,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontWeight: FontWeight.w700,
                         fontSize: 14,
+                        color: AppColors.textPrimaryOf(context),
                       ),
                     ),
                     const SizedBox(height: 6),

@@ -93,22 +93,22 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
                 ),
               ),
               const SizedBox(height: 36),
-              const Text(
+              Text(
                 'SendSnap',
                 style: TextStyle(
                   fontSize: 32,
                   fontWeight: FontWeight.w900,
                   letterSpacing: -0.5,
-                  color: AppColors.textPrimary,
+                  color: AppColors.textPrimaryOf(context),
                 ),
               ),
               const SizedBox(height: 6),
-              const Text(
+              Text(
                 'Fast Nearby Share',
                 style: TextStyle(
                   fontSize: 14,
                   fontWeight: FontWeight.w500,
-                  color: AppColors.textSecondary,
+                  color: AppColors.textSecondaryOf(context),
                 ),
               ),
               const SizedBox(height: 36),

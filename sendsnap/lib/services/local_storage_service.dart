@@ -8,12 +8,14 @@ import 'file_handler.dart';
 
 enum StorageCategory {
   recent,
+  apps,
   files,
   downloads,
   photos,
   videos,
   audio,
   documents,
+  archives,
   received,
 }
 
@@ -24,6 +26,8 @@ class LocalItem {
   final DateTime modified;
   final bool isDirectory;
   final String extension;
+  final String? packageName;
+  final bool isInstalledApp;
 
   LocalItem({
     required this.path,
@@ -32,6 +36,8 @@ class LocalItem {
     required this.modified,
     required this.isDirectory,
     required this.extension,
+    this.packageName,
+    this.isInstalledApp = false,
   });
 
   String get formattedSize => isDirectory ? '' : FileHandler.formatFileSize(size);
@@ -45,9 +51,22 @@ class LocalItem {
   bool get isAudio => const ['.mp3', '.m4a', '.wav', '.flac', '.aac', '.ogg', '.opus', '.wma']
       .contains(extension.toLowerCase());
 
+  bool get isApp =>
+      isInstalledApp ||
+      const ['.apk', '.xapk', '.apkm', '.aab'].contains(extension.toLowerCase());
+
+  bool get isArchive => const [
+        '.zip', '.rar', '.7z', '.tar', '.gz', '.bz2', '.xz',
+        '.iso', '.exe', '.msi', '.dmg', '.deb', '.rpm', '.bin'
+      ].contains(extension.toLowerCase());
+
   bool get isDocument => const [
         '.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx', '.txt',
-        '.csv', '.rtf', '.zip', '.rar', '.7z', '.tar', '.gz', '.apk', '.json'
+        '.csv', '.rtf', '.md', '.json', '.xml', '.yaml', '.yml', '.html',
+        '.epub', '.mobi', '.odt', '.ods', '.odp', '.dwg', '.dxf', '.stl',
+        '.obj', '.step', '.stp', '.sldprt', '.sldasm', '.blend', '.psd', '.ai',
+        '.py', '.dart', '.js', '.ts', '.java', '.kt', '.cpp', '.c', '.sql',
+        '.zip', '.rar', '.7z', '.tar', '.gz', '.apk'
       ].contains(extension.toLowerCase());
 }
 
@@ -63,7 +82,17 @@ class LocalStorageService {
   ];
   static const List<String> _docExts = [
     '.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx', '.txt',
-    '.csv', '.rtf', '.zip', '.rar', '.7z', '.tar', '.gz', '.apk', '.json'
+    '.csv', '.rtf', '.md', '.json', '.xml', '.yaml', '.yml', '.html',
+    '.epub', '.mobi', '.odt', '.ods', '.odp', '.dwg', '.dxf', '.stl',
+    '.obj', '.step', '.stp', '.sldprt', '.sldasm', '.blend', '.psd', '.ai',
+    '.py', '.dart', '.js', '.ts', '.java', '.kt', '.cpp', '.c', '.sql',
+    '.zip', '.rar', '.7z', '.tar', '.gz', '.apk'
+  ];
+  static const List<String> _apkExts = ['.apk', '.xapk', '.apkm', '.aab'];
+  static const List<String> _archiveExts = [
+    '.zip', '.rar', '.7z', '.tar', '.gz', '.bz2', '.xz',
+    '.iso', '.apk', '.xapk', '.apkm', '.aab', '.exe', '.msi', '.dmg',
+    '.deb', '.rpm', '.bin'
   ];
 
   static Future<String> getRootStoragePath() async {
@@ -196,6 +225,32 @@ class LocalStorageService {
             ]),
           );
 
+        case StorageCategory.apps:
+          if (Platform.isAndroid) {
+            final installedApps = await _queryAndroidInstalledApps();
+            final apkFiles = await _scanForFiles(
+              extensions: _apkExts,
+              targetFolders: [
+                '/storage/emulated/0/Download',
+                '/storage/emulated/0/Download/SendSnap',
+              ],
+            );
+            final seenPaths = <String>{};
+            final combined = <LocalItem>[];
+            for (final item in [...apkFiles, ...installedApps]) {
+              if (seenPaths.add(item.path)) {
+                combined.add(item);
+              }
+            }
+            return combined;
+          }
+          return await _scanForFiles(
+            extensions: const ['.apk', '.xapk', '.exe', '.msi', '.zip'],
+            targetFolders: _getPlatformFolders('Downloads', [
+              '/storage/emulated/0/Download',
+            ]),
+          );
+
         case StorageCategory.documents:
           if (Platform.isAndroid) {
             final media = await _queryAndroidMediaStore(StorageCategory.documents);
@@ -206,6 +261,33 @@ class LocalStorageService {
             targetFolders: _getPlatformFolders('Documents', [
               '/storage/emulated/0/Documents',
               '/storage/emulated/0/Download',
+            ]),
+          );
+
+        case StorageCategory.archives:
+          if (Platform.isAndroid) {
+            final media = await _queryAndroidMediaStore(StorageCategory.archives);
+            final scanned = await _scanForFiles(
+              extensions: _archiveExts,
+              targetFolders: [
+                '/storage/emulated/0/Download',
+                '/storage/emulated/0/Download/SendSnap',
+                '/storage/emulated/0/Documents',
+              ],
+            );
+            final seen = <String>{};
+            final combined = <LocalItem>[];
+            for (final item in [...media, ...scanned]) {
+              if (seen.add(item.path)) combined.add(item);
+            }
+            combined.sort((a, b) => b.modified.compareTo(a.modified));
+            return combined;
+          }
+          return await _scanForFiles(
+            extensions: _archiveExts,
+            targetFolders: _getPlatformFolders('Downloads', [
+              '/storage/emulated/0/Download',
+              '/storage/emulated/0/Documents',
             ]),
           );
       }
@@ -269,7 +351,9 @@ class LocalStorageService {
                   ? 'audio'
                   : category == StorageCategory.documents
                       ? 'documents'
-                      : 'recents';
+                      : category == StorageCategory.archives
+                          ? 'archives'
+                          : 'recents';
       final rawList = await channel.invokeMethod<List<dynamic>>(
         'queryMediaFiles',
         {'type': typeStr},
@@ -301,6 +385,91 @@ class LocalStorageService {
       debugPrint('[LocalStorageService] MediaStore query failed: $e');
     }
     return [];
+  }
+
+  static Future<List<LocalItem>> _queryAndroidInstalledApps() async {
+    try {
+      const channel = MethodChannel('com.the356company.sendsnap/file_utils');
+      final rawList = await channel.invokeMethod<List<dynamic>>('queryInstalledApps');
+      if (rawList != null && rawList.isNotEmpty) {
+        final items = <LocalItem>[];
+        for (final entry in rawList) {
+          if (entry is Map) {
+            final path = entry['path']?.toString() ?? '';
+            final name = entry['name']?.toString() ?? p.basename(path);
+            final pkgName = entry['packageName']?.toString();
+            final size = (entry['size'] as num?)?.toInt() ?? 0;
+            final modMs = (entry['modified'] as num?)?.toInt() ?? 0;
+            if (path.isEmpty) continue;
+            items.add(LocalItem(
+              path: path,
+              name: name,
+              size: size,
+              modified: DateTime.fromMillisecondsSinceEpoch(modMs),
+              isDirectory: false,
+              extension: '.apk',
+              packageName: pkgName,
+              isInstalledApp: true,
+            ));
+          }
+        }
+        return items;
+      }
+    } catch (e) {
+      debugPrint('[LocalStorageService] Installed apps query failed: $e');
+    }
+    return [];
+  }
+
+  /// Copies an installed APK (typically named `base.apk`) into a temporary staging
+  /// directory using the friendly `<AppName>.apk` filename before sending.
+  static Future<File?> prepareApkForSending(
+    String sourcePath,
+    String displayName,
+  ) async {
+    try {
+      final sourceFile = File(sourcePath);
+      if (!await sourceFile.exists()) return null;
+
+      final sanitized = displayName
+          .replaceAll(RegExp(r'[/\\:*?"<>|]'), '_')
+          .trim();
+      final finalName = sanitized.toLowerCase().endsWith('.apk')
+          ? sanitized
+          : '$sanitized.apk';
+
+      if (p.basename(sourcePath).toLowerCase() == finalName.toLowerCase()) {
+        return sourceFile;
+      }
+
+      final tempDir = await path_provider.getTemporaryDirectory();
+      final stagingDir = Directory(p.join(tempDir.path, 'sendsnap_apks'));
+      if (!await stagingDir.exists()) {
+        await stagingDir.create(recursive: true);
+      }
+      final stagedFile = File(p.join(stagingDir.path, finalName));
+      await sourceFile.copy(stagedFile.path);
+      return stagedFile;
+    } catch (e) {
+      debugPrint('[LocalStorageService] prepareApkForSending error: $e');
+      final fallback = File(sourcePath);
+      return await fallback.exists() ? fallback : null;
+    }
+  }
+
+  static Future<File?> prepareFileForSending(LocalItem item) async {
+    if (item.isInstalledApp) {
+      return prepareApkForSending(item.path, item.name);
+    }
+    if (item.path.startsWith('content://')) {
+      final resolved = await FileHandler.resolveContentUri(item.path);
+      if (resolved != null && await File(resolved).exists()) {
+        return File(resolved);
+      }
+      return null;
+    }
+    final f = File(item.path);
+    return await f.exists() ? f : null;
   }
 
   /// Scans known media/documents folders in a background isolate.

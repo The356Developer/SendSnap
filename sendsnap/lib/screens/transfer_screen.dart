@@ -67,14 +67,15 @@ class _TransferScreenState extends State<TransferScreen> {
             backgroundColor: Colors.transparent,
             elevation: 0,
             leading: _buildTopCloseButton(
+              context,
               onTap: () => Navigator.of(context).maybePop(),
             ),
-            title: const Text(
+            title: Text(
               'Transfer',
               style: TextStyle(
                 fontWeight: FontWeight.w800,
                 fontSize: 19,
-                color: AppColors.textPrimary,
+                color: AppColors.textPrimaryOf(context),
               ),
             ),
             centerTitle: true,
@@ -83,12 +84,12 @@ class _TransferScreenState extends State<TransferScreen> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Text(
+                Text(
                   'No active transfers',
                   style: TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.w600,
-                    color: AppColors.textSecondary,
+                    color: AppColors.textSecondaryOf(context),
                   ),
                 ),
                 const SizedBox(height: 16),
@@ -143,6 +144,7 @@ class _TransferScreenState extends State<TransferScreen> {
               leading: Padding(
                 padding: const EdgeInsets.only(left: 12),
                 child: _buildTopCloseButton(
+                  context,
                   tooltip: isBatchComplete
                       ? 'Close all & return to main menu'
                       : 'Minimize to background',
@@ -162,11 +164,11 @@ class _TransferScreenState extends State<TransferScreen> {
                   failedCount: failedCount,
                   isIncoming: isIncoming,
                 ),
-                style: const TextStyle(
+                style: TextStyle(
                   fontWeight: FontWeight.w800,
                   fontSize: 19,
                   letterSpacing: -0.3,
-                  color: AppColors.textPrimary,
+                  color: AppColors.textPrimaryOf(context),
                 ),
               ),
               centerTitle: true,
@@ -184,34 +186,37 @@ class _TransferScreenState extends State<TransferScreen> {
                             vertical: 8,
                           ),
                           decoration: BoxDecoration(
-                            color: Colors.white.withValues(alpha: 0.85),
+                            color: AppColors.surfaceOf(context),
                             borderRadius: BorderRadius.circular(20),
                             border: Border.all(
-                              color: Colors.black.withValues(alpha: 0.08),
+                              color: AppColors.inkOf(context),
+                              width: 1.6,
                             ),
                             boxShadow: [
                               BoxShadow(
-                                color: Colors.black.withValues(alpha: 0.04),
-                                blurRadius: 8,
-                                offset: const Offset(0, 2),
+                                color: AppColors.isDark(context)
+                                    ? Colors.black.withValues(alpha: 0.7)
+                                    : AppColors.ink,
+                                blurRadius: 0,
+                                offset: const Offset(2, 2.5),
                               ),
                             ],
                           ),
-                          child: const Row(
+                          child: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              Icon(
+                              const Icon(
                                 Icons.home_rounded,
                                 size: 16,
                                 color: AppColors.primary,
                               ),
-                              SizedBox(width: 6),
+                              const SizedBox(width: 6),
                               Text(
                                 'Close All',
                                 style: TextStyle(
                                   fontSize: 12,
                                   fontWeight: FontWeight.w700,
-                                  color: AppColors.textPrimary,
+                                  color: AppColors.textPrimaryOf(context),
                                 ),
                               ),
                             ],
@@ -249,7 +254,8 @@ class _TransferScreenState extends State<TransferScreen> {
     );
   }
 
-  Widget _buildTopCloseButton({
+  Widget _buildTopCloseButton(
+    BuildContext context, {
     required VoidCallback onTap,
     String? tooltip,
   }) {
@@ -258,20 +264,22 @@ class _TransferScreenState extends State<TransferScreen> {
       child: Container(
         margin: const EdgeInsets.all(6),
         decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.85),
+          color: AppColors.surfaceOf(context),
           shape: BoxShape.circle,
-          border: Border.all(color: Colors.white.withValues(alpha: 0.9), width: 1),
+          border: Border.all(color: AppColors.inkOf(context), width: 1.6),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withValues(alpha: 0.04),
-              blurRadius: 8,
-              offset: const Offset(0, 2),
+              color: AppColors.isDark(context)
+                  ? Colors.black.withValues(alpha: 0.7)
+                  : AppColors.ink,
+              blurRadius: 0,
+              offset: const Offset(2, 2.5),
             ),
           ],
         ),
-        child: const Icon(
+        child: Icon(
           Icons.close_rounded,
-          color: AppColors.textPrimary,
+          color: AppColors.textPrimaryOf(context),
           size: 20,
         ),
       ),
@@ -362,6 +370,7 @@ class _TransferScreenState extends State<TransferScreen> {
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
                                   _buildProgressRing(
+                                    context,
                                     transProv: transProv,
                                     isComplete: isBatchComplete,
                                     failedCount: failedCount,
@@ -384,15 +393,16 @@ class _TransferScreenState extends State<TransferScreen> {
                                     textAlign: TextAlign.center,
                                     maxLines: 2,
                                     overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(
+                                    style: TextStyle(
                                       fontSize: 20,
                                       fontWeight: FontWeight.w800,
                                       letterSpacing: -0.4,
-                                      color: AppColors.textPrimary,
+                                      color: AppColors.textPrimaryOf(context),
                                     ),
                                   ),
                                   const SizedBox(height: 8),
                                   _buildPeerAndLocationSubtitle(
+                                    context,
                                     transProv: transProv,
                                     isComplete: isBatchComplete,
                                     isIncoming: isIncoming,
@@ -401,6 +411,7 @@ class _TransferScreenState extends State<TransferScreen> {
                                   ),
                                   const SizedBox(height: 16),
                                   _buildStatsRow(
+                                    context,
                                     transProv: transProv,
                                     batch: batch,
                                     completedCount: completedFiles.length,
@@ -529,6 +540,7 @@ class _TransferScreenState extends State<TransferScreen> {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     _buildProgressRing(
+                      context,
                       transProv: transProv,
                       isComplete: isBatchComplete,
                       failedCount: failedCount,
@@ -551,15 +563,16 @@ class _TransferScreenState extends State<TransferScreen> {
                       textAlign: TextAlign.center,
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 19,
                         fontWeight: FontWeight.w800,
                         letterSpacing: -0.3,
-                        color: AppColors.textPrimary,
+                        color: AppColors.textPrimaryOf(context),
                       ),
                     ),
                     const SizedBox(height: 8),
                     _buildPeerAndLocationSubtitle(
+                      context,
                       transProv: transProv,
                       isComplete: isBatchComplete,
                       isIncoming: isIncoming,
@@ -568,6 +581,7 @@ class _TransferScreenState extends State<TransferScreen> {
                     ),
                     const SizedBox(height: 16),
                     _buildStatsRow(
+                      context,
                       transProv: transProv,
                       batch: batch,
                       completedCount: completedFiles.length,
@@ -634,7 +648,8 @@ class _TransferScreenState extends State<TransferScreen> {
   // Shared Building Blocks
   // ---------------------------------------------------------------------------
 
-  Widget _buildProgressRing({
+  Widget _buildProgressRing(
+    BuildContext context, {
     required TransferProvider transProv,
     required bool isComplete,
     required int failedCount,
@@ -708,7 +723,7 @@ class _TransferScreenState extends State<TransferScreen> {
                 fontSize: percentFontSize,
                 fontWeight: FontWeight.w800,
                 letterSpacing: -0.8,
-                color: AppColors.textPrimary,
+                color: AppColors.textPrimaryOf(context),
               ),
             ),
           ],
@@ -717,7 +732,8 @@ class _TransferScreenState extends State<TransferScreen> {
     );
   }
 
-  Widget _buildPeerAndLocationSubtitle({
+  Widget _buildPeerAndLocationSubtitle(
+    BuildContext context, {
     required TransferProvider transProv,
     required bool isComplete,
     required bool isIncoming,
@@ -776,8 +792,8 @@ class _TransferScreenState extends State<TransferScreen> {
             ? '${isIncoming ? 'Receiving from' : 'Sending to'} $peer'
             : 'Keep both devices nearby until finished',
         textAlign: TextAlign.center,
-        style: const TextStyle(
-          color: AppColors.textSecondary,
+        style: TextStyle(
+          color: AppColors.textSecondaryOf(context),
           fontSize: 13,
           fontWeight: FontWeight.w500,
         ),
@@ -814,7 +830,8 @@ class _TransferScreenState extends State<TransferScreen> {
     );
   }
 
-  Widget _buildStatsRow({
+  Widget _buildStatsRow(
+    BuildContext context, {
     required TransferProvider transProv,
     required List<FileTransfer> batch,
     required int completedCount,
@@ -823,6 +840,7 @@ class _TransferScreenState extends State<TransferScreen> {
       children: [
         Expanded(
           child: _buildStatChip(
+            context,
             label: 'FILES',
             value: '$completedCount / ${batch.length}',
           ),
@@ -830,6 +848,7 @@ class _TransferScreenState extends State<TransferScreen> {
         const SizedBox(width: 10),
         Expanded(
           child: _buildStatChip(
+            context,
             label: 'TOTAL SIZE',
             value: FileHandler.formatFileSize(transProv.totalBatchBytes),
           ),
@@ -838,23 +857,28 @@ class _TransferScreenState extends State<TransferScreen> {
     );
   }
 
-  Widget _buildStatChip({required String label, required String value}) {
+  Widget _buildStatChip(
+    BuildContext context, {
+    required String label,
+    required String value,
+  }) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
-        color: Colors.black.withValues(alpha: 0.04),
+        color: AppColors.subtleFillOf(context),
         borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.subtleBorderOf(context)),
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           Text(
             label,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 10,
               fontWeight: FontWeight.w700,
               letterSpacing: 0.8,
-              color: AppColors.textSecondary,
+              color: AppColors.textSecondaryOf(context),
             ),
           ),
           const SizedBox(height: 3),
@@ -862,10 +886,10 @@ class _TransferScreenState extends State<TransferScreen> {
             value,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 13,
               fontWeight: FontWeight.w800,
-              color: AppColors.textPrimary,
+              color: AppColors.textPrimaryOf(context),
             ),
           ),
         ],
@@ -890,18 +914,18 @@ class _TransferScreenState extends State<TransferScreen> {
           child: Container(
             height: 48,
             decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.9),
+              color: AppColors.surfaceOf(context),
               borderRadius: BorderRadius.circular(18),
-              border: Border.all(color: Colors.black.withValues(alpha: 0.08)),
+              border: Border.all(color: AppColors.inkOf(context), width: 1.6),
             ),
-            child: const Center(
+            child: Center(
               child: Text(
                 'MINIMIZE',
                 style: TextStyle(
                   fontSize: 13,
                   fontWeight: FontWeight.w700,
                   letterSpacing: 0.4,
-                  color: AppColors.textPrimary,
+                  color: AppColors.textPrimaryOf(context),
                 ),
               ),
             ),
@@ -927,11 +951,11 @@ class _TransferScreenState extends State<TransferScreen> {
               height: 48,
               padding: const EdgeInsets.symmetric(horizontal: 14),
               decoration: BoxDecoration(
-                color: Colors.white,
+                color: AppColors.surfaceOf(context),
                 borderRadius: BorderRadius.circular(18),
                 border: Border.all(
-                  color: Colors.black.withValues(alpha: 0.08),
-                  width: 1.2,
+                  color: AppColors.subtleBorderOf(context),
+                  width: 1.4,
                 ),
               ),
               child: const FittedBox(
@@ -969,11 +993,11 @@ class _TransferScreenState extends State<TransferScreen> {
               height: 48,
               padding: const EdgeInsets.symmetric(horizontal: 14),
               decoration: BoxDecoration(
-                color: Colors.white,
+                color: AppColors.surfaceOf(context),
                 borderRadius: BorderRadius.circular(18),
                 border: Border.all(
-                  color: Colors.black.withValues(alpha: 0.08),
-                  width: 1.2,
+                  color: AppColors.subtleBorderOf(context),
+                  width: 1.4,
                 ),
               ),
               child: const FittedBox(
@@ -1012,14 +1036,14 @@ class _TransferScreenState extends State<TransferScreen> {
                   ? AppColors.receiveGradient
                   : AppColors.sendGradient,
               borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: AppColors.inkOf(context), width: 2.0),
               boxShadow: [
                 BoxShadow(
-                  color: (failedCount == 0
-                          ? AppColors.receivePrimary
-                          : AppColors.primary)
-                      .withValues(alpha: 0.35),
-                  blurRadius: 18,
-                  offset: const Offset(0, 8),
+                  color: AppColors.isDark(context)
+                      ? Colors.black.withValues(alpha: 0.75)
+                      : AppColors.ink,
+                  blurRadius: 0,
+                  offset: const Offset(3, 4),
                 ),
               ],
             ),
@@ -1064,11 +1088,11 @@ class _TransferScreenState extends State<TransferScreen> {
             children: [
               Text(
                 'Files (${batch.length})',
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 17,
                   fontWeight: FontWeight.w800,
                   letterSpacing: -0.3,
-                  color: AppColors.textPrimary,
+                  color: AppColors.textPrimaryOf(context),
                 ),
               ),
               const SizedBox(height: 2),
@@ -1076,10 +1100,10 @@ class _TransferScreenState extends State<TransferScreen> {
                 isBatchComplete
                     ? 'Click any file to view'
                     : 'Transfer queue',
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.w500,
-                  color: AppColors.textSecondary,
+                  color: AppColors.textSecondaryOf(context),
                 ),
               ),
             ],
@@ -1181,19 +1205,19 @@ class _TransferScreenState extends State<TransferScreen> {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               textAlign: TextAlign.center,
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 17,
                 fontWeight: FontWeight.w800,
-                color: AppColors.textPrimary,
+                color: AppColors.textPrimaryOf(context),
               ),
             ),
             const SizedBox(height: 4),
             Text(
               '${FileHandler.formatFileSize(file.fileSize)}${ext.isNotEmpty ? ' • $ext' : ''}',
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 12,
                 fontWeight: FontWeight.w600,
-                color: AppColors.textSecondary,
+                color: AppColors.textSecondaryOf(context),
               ),
             ),
             const SizedBox(height: 16),
@@ -1228,9 +1252,9 @@ class _TransferScreenState extends State<TransferScreen> {
                 ),
                 OutlinedButton.icon(
                   style: OutlinedButton.styleFrom(
-                    foregroundColor: AppColors.textPrimary,
+                    foregroundColor: AppColors.textPrimaryOf(context),
                     side: BorderSide(
-                      color: Colors.black.withValues(alpha: 0.14),
+                      color: AppColors.subtleBorderOf(context),
                     ),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(16),
@@ -1283,7 +1307,7 @@ class _TransferScreenState extends State<TransferScreen> {
     final ext = p.extension(file.fileName).toUpperCase().replaceAll('.', '');
 
     String statusText;
-    Color statusColor = AppColors.textSecondary;
+    Color statusColor = AppColors.textSecondaryOf(context);
     if (isCompleted) {
       statusText = 'Ready to view';
       statusColor = AppColors.success;
@@ -1308,14 +1332,14 @@ class _TransferScreenState extends State<TransferScreen> {
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
           decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: isCompleted ? 0.85 : 0.65),
+            color: AppColors.surfaceOf(context).withValues(alpha: isCompleted ? 0.95 : 0.78),
             borderRadius: BorderRadius.circular(18),
             border: Border.all(
               color: isInProgress
-                  ? AppColors.primary.withValues(alpha: 0.35)
+                  ? AppColors.primary.withValues(alpha: 0.5)
                   : isFailed
-                      ? AppColors.error.withValues(alpha: 0.3)
-                      : Colors.black.withValues(alpha: 0.06),
+                      ? AppColors.error.withValues(alpha: 0.45)
+                      : AppColors.subtleBorderOf(context),
             ),
           ),
           child: Row(
@@ -1331,11 +1355,11 @@ class _TransferScreenState extends State<TransferScreen> {
                       file.fileName,
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 13.5,
                         fontWeight: FontWeight.w700,
                         height: 1.2,
-                        color: AppColors.textPrimary,
+                        color: AppColors.textPrimaryOf(context),
                       ),
                     ),
                     const SizedBox(height: 3),
@@ -1348,10 +1372,10 @@ class _TransferScreenState extends State<TransferScreen> {
                             TextSpan(
                               text:
                                   '${FileHandler.formatFileSize(file.fileSize)}${ext.isNotEmpty ? ' • $ext' : ''}',
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontSize: 11,
                                 fontWeight: FontWeight.w600,
-                                color: AppColors.textSecondary,
+                                color: AppColors.textSecondaryOf(context),
                               ),
                             ),
                             const TextSpan(text: '  '),
@@ -1406,9 +1430,9 @@ class _TransferScreenState extends State<TransferScreen> {
                 if (isGalleryCapable && MediaQuery.sizeOf(context).width >= 430)
                   IconButton(
                     tooltip: 'Open in default app',
-                    icon: const Icon(
+                    icon: Icon(
                       Icons.open_in_new_rounded,
-                      color: AppColors.textSecondary,
+                      color: AppColors.textSecondaryOf(context),
                       size: 18,
                     ),
                     constraints:
@@ -1424,9 +1448,9 @@ class _TransferScreenState extends State<TransferScreen> {
                   ),
                 IconButton(
                   tooltip: 'Show in folder',
-                  icon: const Icon(
+                  icon: Icon(
                     Icons.folder_open_rounded,
-                    color: AppColors.textSecondary,
+                    color: AppColors.textSecondaryOf(context),
                     size: 20,
                   ),
                   constraints: const BoxConstraints(minWidth: 34, minHeight: 34),
@@ -1465,15 +1489,15 @@ class _TransferScreenState extends State<TransferScreen> {
                   padding:
                       const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                   decoration: BoxDecoration(
-                    color: Colors.black.withValues(alpha: 0.05),
+                    color: AppColors.subtleFillOf(context),
                     borderRadius: BorderRadius.circular(12),
                   ),
-                  child: const Text(
+                  child: Text(
                     'Waiting',
                     style: TextStyle(
                       fontSize: 11,
                       fontWeight: FontWeight.w600,
-                      color: AppColors.textSecondary,
+                      color: AppColors.textSecondaryOf(context),
                     ),
                   ),
                 ),

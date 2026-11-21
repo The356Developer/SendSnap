@@ -72,14 +72,6 @@ class _NetworkStatusPillState extends State<NetworkStatusPill>
         opacity: 0.70,
         borderRadius: 22,
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-        borderColor: Colors.white.withValues(alpha: 0.8),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.04),
-            blurRadius: 10,
-            offset: const Offset(0, 3),
-          ),
-        ],
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -114,7 +106,7 @@ class _NetworkStatusPillState extends State<NetworkStatusPill>
               style: TextStyle(
                 fontSize: 12,
                 fontWeight: FontWeight.w600,
-                color: isReady ? AppColors.textSecondary : AppColors.warning,
+                color: isReady ? AppColors.textSecondaryOf(context) : AppColors.warning,
               ),
             ),
             const SizedBox(width: 6),
@@ -123,7 +115,7 @@ class _NetworkStatusPillState extends State<NetworkStatusPill>
             Icon(
               Icons.info_outline_rounded,
               size: 13,
-              color: isReady ? AppColors.textSecondary : AppColors.warning,
+              color: isReady ? AppColors.textSecondaryOf(context) : AppColors.warning,
             ),
           ],
         ),

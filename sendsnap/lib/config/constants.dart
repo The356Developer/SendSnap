@@ -20,6 +20,34 @@ class AppColors {
   static const Color textSecondary = Color(0xFF5C5852);  // Graphite Pencil Grey
   static const Color textMuted = Color(0xFF8C857B);      // Muted Warm Grey
 
+  static bool isDark(BuildContext context) =>
+      Theme.of(context).brightness == Brightness.dark;
+
+  static Color textPrimaryOf(BuildContext context) =>
+      isDark(context) ? const Color(0xFFF3F5F8) : textPrimary;
+
+  static Color textSecondaryOf(BuildContext context) =>
+      isDark(context) ? const Color(0xFFA8B0C2) : textSecondary;
+
+  static Color backgroundOf(BuildContext context) =>
+      isDark(context) ? const Color(0xFF14161C) : background;
+
+  static Color surfaceOf(BuildContext context) =>
+      isDark(context) ? const Color(0xFF1E232E) : surface;
+
+  static Color subtleFillOf(BuildContext context) =>
+      isDark(context)
+          ? Colors.white.withValues(alpha: 0.07)
+          : Colors.black.withValues(alpha: 0.04);
+
+  static Color subtleBorderOf(BuildContext context) =>
+      isDark(context)
+          ? Colors.white.withValues(alpha: 0.14)
+          : Colors.black.withValues(alpha: 0.08);
+
+  static Color inkOf(BuildContext context) =>
+      isDark(context) ? chalkInk : ink;
+
   static const Color success = Color(0xFF159960);        // Marker Emerald
   static const Color error = Color(0xFFE04F3E);          // Vermilion Marker Red
   static const Color warning = Color(0xFFE68A00);        // Ochre Marker Orange

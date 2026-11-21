@@ -96,8 +96,8 @@ class _DraggableFileTokenState extends State<DraggableFileToken> {
           Container(
             padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 12),
             decoration: BoxDecoration(
-              color: Colors.black.withValues(alpha: 0.02),
-              borderRadius: const BorderRadius.vertical(bottom: Radius.circular(24)),
+              color: AppColors.subtleFillOf(context),
+              borderRadius: const BorderRadius.vertical(bottom: Radius.circular(22)),
             ),
             child: FittedBox(
               fit: BoxFit.scaleDown,
@@ -107,7 +107,7 @@ class _DraggableFileTokenState extends State<DraggableFileToken> {
                   Icon(
                     Icons.info_outline_rounded,
                     size: 12,
-                    color: AppColors.textSecondary.withValues(alpha: 0.8),
+                    color: AppColors.textSecondaryOf(context).withValues(alpha: 0.9),
                   ),
                   const SizedBox(width: 5),
                   Text(
@@ -119,7 +119,7 @@ class _DraggableFileTokenState extends State<DraggableFileToken> {
                     style: TextStyle(
                       fontSize: 10.5,
                       fontWeight: FontWeight.w600,
-                      color: AppColors.textSecondary.withValues(alpha: 0.8),
+                      color: AppColors.textSecondaryOf(context).withValues(alpha: 0.9),
                     ),
                   ),
                 ],
@@ -175,7 +175,7 @@ class _DraggableFileTokenState extends State<DraggableFileToken> {
         : Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
             decoration: BoxDecoration(
-              color: Colors.black.withValues(alpha: 0.04),
+              color: AppColors.subtleFillOf(context),
               borderRadius: BorderRadius.circular(14),
             ),
             child: FittedBox(
@@ -196,10 +196,10 @@ class _DraggableFileTokenState extends State<DraggableFileToken> {
                         : (l10n != null ? l10n.homeFilesCount(1) : '1 file'),
                     maxLines: 1,
                     softWrap: false,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 11,
                       fontWeight: FontWeight.w700,
-                      color: AppColors.textSecondary,
+                      color: AppColors.textSecondaryOf(context),
                     ),
                   ),
                 ],
@@ -251,9 +251,9 @@ class _DraggableFileTokenState extends State<DraggableFileToken> {
                 padding: const EdgeInsets.all(6),
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  color: Colors.black.withValues(alpha: 0.05),
+                  color: AppColors.subtleFillOf(context),
                 ),
-                child: const Icon(Icons.close_rounded, size: 15, color: AppColors.textSecondary),
+                child: Icon(Icons.close_rounded, size: 15, color: AppColors.textSecondaryOf(context)),
               ),
             ),
           ],
@@ -309,7 +309,7 @@ class _DraggableFileTokenState extends State<DraggableFileToken> {
                   fontWeight: FontWeight.w600,
                   color: isDragging
                       ? Colors.white.withValues(alpha: 0.85)
-                      : AppColors.textSecondary,
+                      : AppColors.textSecondaryOf(context),
                 ),
               ),
             ],
@@ -485,10 +485,10 @@ class _DraggableFileTokenState extends State<DraggableFileToken> {
                     fileSize.isNotEmpty
                         ? (ext.isNotEmpty ? '$fileSize • $ext' : fileSize)
                         : ext,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 11,
                       fontWeight: FontWeight.w600,
-                      color: AppColors.textSecondary,
+                      color: AppColors.textSecondaryOf(context),
                     ),
                   ),
                 ],
@@ -506,10 +506,10 @@ class _DraggableFileTokenState extends State<DraggableFileToken> {
                     shape: BoxShape.circle,
                     color: (isDark ? Colors.white : Colors.black).withValues(alpha: 0.07),
                   ),
-                  child: const Icon(
+                  child: Icon(
                     Icons.close_rounded,
                     size: 14,
-                    color: AppColors.textSecondary,
+                    color: AppColors.textSecondaryOf(context),
                   ),
                 ),
               ),
@@ -559,10 +559,10 @@ class _DraggableFileTokenState extends State<DraggableFileToken> {
                       shape: BoxShape.circle,
                       color: (isDark ? Colors.white : Colors.black).withValues(alpha: 0.07),
                     ),
-                    child: const Icon(
+                    child: Icon(
                       Icons.close_rounded,
                       size: 13,
-                      color: AppColors.textSecondary,
+                      color: AppColors.textSecondaryOf(context),
                     ),
                   ),
                 ),
@@ -591,10 +591,10 @@ class _DraggableFileTokenState extends State<DraggableFileToken> {
                 fileSize.isNotEmpty ? fileSize : ext,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 10,
                   fontWeight: FontWeight.w600,
-                  color: AppColors.textSecondary,
+                  color: AppColors.textSecondaryOf(context),
                 ),
               ),
             ],
@@ -632,7 +632,7 @@ class _DraggableFileTokenState extends State<DraggableFileToken> {
       width: 250,
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: AppColors.surfaceOf(context),
         borderRadius: BorderRadius.circular(20),
         border: Border.all(color: AppColors.primary, width: 2),
         boxShadow: [
@@ -658,10 +658,10 @@ class _DraggableFileTokenState extends State<DraggableFileToken> {
                   fileName,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 13,
                     fontWeight: FontWeight.w700,
-                    color: AppColors.textPrimary,
+                    color: AppColors.textPrimaryOf(context),
                   ),
                 ),
                 const SizedBox(height: 2),

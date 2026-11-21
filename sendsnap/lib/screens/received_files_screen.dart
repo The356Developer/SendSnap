@@ -59,9 +59,19 @@ class _ReceivedFilesScreenState extends State<ReceivedFilesScreen> {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Text(l10n.receivedDeleteTitle, style: const TextStyle(fontWeight: FontWeight.w700)),
-        content: Text(l10n.receivedDeleteConfirm(item.name)),
+        backgroundColor: AppColors.surfaceOf(ctx),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+          side: BorderSide(color: AppColors.inkOf(ctx), width: 1.6),
+        ),
+        title: Text(
+          l10n.receivedDeleteTitle,
+          style: TextStyle(fontWeight: FontWeight.w700, color: AppColors.textPrimaryOf(ctx)),
+        ),
+        content: Text(
+          l10n.receivedDeleteConfirm(item.name),
+          style: TextStyle(color: AppColors.textSecondaryOf(ctx)),
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
@@ -175,13 +185,22 @@ class _ReceivedFilesScreenState extends State<ReceivedFilesScreen> {
             child: Container(
               padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.8),
+                color: AppColors.surfaceOf(context),
                 shape: BoxShape.circle,
-                border: Border.all(color: Colors.white.withValues(alpha: 0.5)),
+                border: Border.all(color: AppColors.inkOf(context), width: 1.6),
+                boxShadow: [
+                  BoxShadow(
+                    color: AppColors.isDark(context)
+                        ? Colors.black.withValues(alpha: 0.7)
+                        : AppColors.ink,
+                    blurRadius: 0,
+                    offset: const Offset(2, 2.5),
+                  ),
+                ],
               ),
               child: Transform.flip(
                 flipX: isRtl,
-                child: const Icon(Icons.arrow_back_rounded, size: 20, color: AppColors.textPrimary),
+                child: Icon(Icons.arrow_back_rounded, size: 20, color: AppColors.textPrimaryOf(context)),
               ),
             ),
           ),
@@ -192,16 +211,16 @@ class _ReceivedFilesScreenState extends State<ReceivedFilesScreen> {
               children: [
                 Text(
                   l10n.receivedTitle,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 22,
                     fontWeight: FontWeight.w800,
                     letterSpacing: -0.5,
-                    color: AppColors.textPrimary,
+                    color: AppColors.textPrimaryOf(context),
                   ),
                 ),
                 Text(
                   '${l10n.homeFilesCount(_files.length)} • ${FileHandler.formatFileSize(_totalBytes)}',
-                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: AppColors.textSecondary),
+                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: AppColors.textSecondaryOf(context)),
                 ),
               ],
             ),
@@ -224,25 +243,25 @@ class _ReceivedFilesScreenState extends State<ReceivedFilesScreen> {
   Widget _buildSearchBar(AppLocalizations l10n) {
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.85),
+        color: AppColors.surfaceOf(context),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.6)),
+        border: Border.all(color: AppColors.subtleBorderOf(context), width: 1.2),
       ),
       padding: const EdgeInsets.symmetric(horizontal: 14),
       child: TextField(
         controller: _searchCtrl,
         onChanged: (val) => setState(() => _searchQuery = val.trim()),
-        style: const TextStyle(fontSize: 14),
+        style: TextStyle(fontSize: 14, color: AppColors.textPrimaryOf(context)),
         decoration: InputDecoration(
-          icon: const Icon(Icons.search_rounded, size: 20, color: AppColors.textSecondary),
+          icon: Icon(Icons.search_rounded, size: 20, color: AppColors.textSecondaryOf(context)),
           hintText: l10n.receivedSearchHint,
-          hintStyle: TextStyle(color: AppColors.textSecondary.withValues(alpha: 0.7), fontSize: 14),
+          hintStyle: TextStyle(color: AppColors.textSecondaryOf(context).withValues(alpha: 0.75), fontSize: 14),
           border: InputBorder.none,
           isDense: true,
           contentPadding: const EdgeInsets.symmetric(vertical: 12),
           suffixIcon: _searchQuery.isNotEmpty
               ? IconButton(
-                  icon: const Icon(Icons.clear_rounded, size: 18),
+                  icon: Icon(Icons.clear_rounded, size: 18, color: AppColors.textSecondaryOf(context)),
                   onPressed: () {
                     _searchCtrl.clear();
                     setState(() => _searchQuery = '');
@@ -274,16 +293,16 @@ class _ReceivedFilesScreenState extends State<ReceivedFilesScreen> {
                     item.name,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.w700,
-                      color: AppColors.textPrimary,
+                      color: AppColors.textPrimaryOf(context),
                     ),
                   ),
                   const SizedBox(height: 3),
                   Text(
                     '${item.formattedSize} • ${_formatDate(item.modified)}',
-                    style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                    style: TextStyle(fontSize: 12, color: AppColors.textSecondaryOf(context)),
                   ),
                 ],
               ),
@@ -310,7 +329,7 @@ class _ReceivedFilesScreenState extends State<ReceivedFilesScreen> {
             const SizedBox(width: 4),
             IconButton(
               tooltip: l10n.receivedOpenFolder,
-              icon: const Icon(Icons.folder_open_rounded, size: 20, color: AppColors.textSecondary),
+              icon: Icon(Icons.folder_open_rounded, size: 20, color: AppColors.textSecondaryOf(context)),
               onPressed: () => FileHandler.openFolderChoice(context, filePath: item.path),
             ),
             IconButton(
@@ -375,8 +394,8 @@ class _ReceivedFilesScreenState extends State<ReceivedFilesScreen> {
       bg = const Color(0xFF007AFF).withValues(alpha: 0.12);
     } else {
       icon = Icons.insert_drive_file_rounded;
-      fg = AppColors.textSecondary;
-      bg = Colors.black.withValues(alpha: 0.05);
+      fg = AppColors.textSecondaryOf(context);
+      bg = AppColors.subtleFillOf(context);
     }
 
     return Container(
@@ -447,10 +466,10 @@ class _ReceivedFilesScreenState extends State<ReceivedFilesScreen> {
 
               Text(
                 l10n.receivedNoFiles,
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 20,
                   fontWeight: FontWeight.w800,
-                  color: AppColors.textPrimary,
+                  color: AppColors.textPrimaryOf(context),
                   letterSpacing: -0.3,
                 ),
               ),
@@ -459,17 +478,19 @@ class _ReceivedFilesScreenState extends State<ReceivedFilesScreen> {
               Text(
                 l10n.receivedNoFilesHint,
                 textAlign: TextAlign.center,
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 13,
-                  color: AppColors.textSecondary,
+                  color: AppColors.textSecondaryOf(context),
                   height: 1.4,
                 ),
               ),
               const SizedBox(height: 24),
 
               // Action Buttons
-              Row(
-                mainAxisSize: MainAxisSize.min,
+              Wrap(
+                spacing: 10,
+                runSpacing: 10,
+                alignment: WrapAlignment.center,
                 children: [
                   BouncingCard(
                     onTap: () => Navigator.of(context).pop(),
@@ -503,14 +524,14 @@ class _ReceivedFilesScreenState extends State<ReceivedFilesScreen> {
                       ),
                     ),
                   ),
-                  const SizedBox(width: 10),
                   BouncingCard(
                     onTap: () => FileHandler.openFolderChoice(context),
                     child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                       decoration: BoxDecoration(
-                        color: Colors.black.withValues(alpha: 0.05),
+                        color: AppColors.subtleFillOf(context),
                         borderRadius: BorderRadius.circular(18),
+                        border: Border.all(color: AppColors.subtleBorderOf(context)),
                       ),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
@@ -529,19 +550,19 @@ class _ReceivedFilesScreenState extends State<ReceivedFilesScreen> {
                       ),
                     ),
                   ),
-                  const SizedBox(width: 10),
                   BouncingCard(
                     onTap: _loadReceivedFiles,
                     child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                       decoration: BoxDecoration(
-                        color: Colors.black.withValues(alpha: 0.05),
+                        color: AppColors.subtleFillOf(context),
                         borderRadius: BorderRadius.circular(18),
+                        border: Border.all(color: AppColors.subtleBorderOf(context)),
                       ),
-                      child: const Row(
+                      child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(Icons.refresh_rounded, size: 16, color: AppColors.textSecondary),
+                          Icon(Icons.refresh_rounded, size: 16, color: AppColors.textSecondaryOf(context)),
                         ],
                       ),
                     ),
@@ -564,9 +585,9 @@ class _ReceivedFilesScreenState extends State<ReceivedFilesScreen> {
       margin: const EdgeInsets.fromLTRB(16, 0, 16, 8),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.88),
+        color: AppColors.surfaceOf(context),
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: const Color(0xFFFF6B6B).withValues(alpha: 0.25)),
+        border: Border.all(color: const Color(0xFFFF6B6B).withValues(alpha: 0.35)),
         boxShadow: [
           BoxShadow(
             color: const Color(0xFFFF6B6B).withValues(alpha: 0.08),
@@ -588,7 +609,7 @@ class _ReceivedFilesScreenState extends State<ReceivedFilesScreen> {
             child: const Icon(Icons.auto_stories_rounded, color: Colors.white, size: 20),
           ),
           const SizedBox(width: 12),
-          const Expanded(
+          Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -596,19 +617,22 @@ class _ReceivedFilesScreenState extends State<ReceivedFilesScreen> {
                   children: [
                     Text(
                       'Read in Pagelit',
-                      style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.textPrimary),
+                      style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.textPrimaryOf(context)),
                     ),
-                    SizedBox(width: 6),
-                    Text(
-                      'by The 356 Company',
-                      style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: AppColors.textSecondary),
+                    const SizedBox(width: 6),
+                    Flexible(
+                      child: Text(
+                        'by The 356 Company',
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: AppColors.textSecondaryOf(context)),
+                      ),
                     ),
                   ],
                 ),
-                SizedBox(height: 2),
+                const SizedBox(height: 2),
                 Text(
                   'Distraction-free reader for your received PDF, Word & Office files',
-                  style: TextStyle(fontSize: 11, color: AppColors.textSecondary),
+                  style: TextStyle(fontSize: 11, color: AppColors.textSecondaryOf(context)),
                 ),
               ],
             ),
@@ -631,7 +655,7 @@ class _ReceivedFilesScreenState extends State<ReceivedFilesScreen> {
           ),
           const SizedBox(width: 6),
           IconButton(
-            icon: const Icon(Icons.close_rounded, size: 16, color: AppColors.textSecondary),
+            icon: Icon(Icons.close_rounded, size: 16, color: AppColors.textSecondaryOf(context)),
             padding: EdgeInsets.zero,
             constraints: const BoxConstraints(),
             onPressed: () => setState(() => _dismissedPagelitBanner = true),

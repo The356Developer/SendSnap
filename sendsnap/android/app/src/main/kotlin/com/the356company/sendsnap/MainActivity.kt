@@ -4,6 +4,8 @@ import android.app.DownloadManager
 import android.content.ContentUris
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ApplicationInfo
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.net.wifi.WifiManager
 import android.os.Build
@@ -135,17 +137,86 @@ class MainActivity : FlutterActivity() {
         }
     }
 
+    private fun queryInstalledApps(): List<Map<String, Any>> {
+        val launcherIntent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
+        val resolveInfos = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            packageManager.queryIntentActivities(
+                launcherIntent,
+                PackageManager.ResolveInfoFlags.of(0L)
+            )
+        } else {
+            @Suppress("DEPRECATION")
+            packageManager.queryIntentActivities(launcherIntent, 0)
+        }
+
+        val allApps = mutableListOf<Map<String, Any>>()
+        val userApps = mutableListOf<Map<String, Any>>()
+        val seenPackages = mutableSetOf<String>()
+
+        for (info in resolveInfos) {
+            val activityInfo = info.activityInfo ?: continue
+            val appInfo = activityInfo.applicationInfo ?: continue
+            val pkgName = appInfo.packageName ?: continue
+            if (!seenPackages.add(pkgName)) continue
+
+            val apkPath = appInfo.publicSourceDir?.takeIf { it.isNotBlank() } ?: appInfo.sourceDir
+            if (apkPath.isNullOrBlank()) continue
+            val apkFile = File(apkPath)
+            if (!apkFile.exists() || !apkFile.canRead()) continue
+
+            val rawLabel = try {
+                packageManager.getApplicationLabel(appInfo).toString().trim()
+            } catch (_: Exception) {
+                pkgName
+            }
+            val cleanBase = rawLabel.replace(Regex("[/\\\\:*?\"<>|]"), "_").ifEmpty { pkgName }
+            val displayApkName = if (cleanBase.lowercase().endsWith(".apk")) cleanBase else "$cleanBase.apk"
+
+            val lastUpdateMs = try {
+                val pkgInfo = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    packageManager.getPackageInfo(pkgName, PackageManager.PackageInfoFlags.of(0L))
+                } else {
+                    @Suppress("DEPRECATION")
+                    packageManager.getPackageInfo(pkgName, 0)
+                }
+                pkgInfo.lastUpdateTime
+            } catch (_: Exception) {
+                apkFile.lastModified()
+            }
+
+            val entry = mapOf<String, Any>(
+                "path" to apkFile.absolutePath,
+                "name" to displayApkName,
+                "packageName" to pkgName,
+                "size" to apkFile.length(),
+                "modified" to lastUpdateMs,
+                "isInstalledApp" to true
+            )
+            allApps.add(entry)
+
+            val isPureSystem = (appInfo.flags and ApplicationInfo.FLAG_SYSTEM) != 0 &&
+                (appInfo.flags and ApplicationInfo.FLAG_UPDATED_SYSTEM_APP) == 0
+            if (!isPureSystem) {
+                userApps.add(entry)
+            }
+        }
+
+        val result = if (userApps.isNotEmpty()) userApps else allApps
+        return result.sortedBy { (it["name"] as String).lowercase() }
+    }
+
     private fun queryMediaStoreFiles(type: String): List<Map<String, Any>> {
         val list = mutableListOf<Map<String, Any>>()
         val typeLower = type.lowercase()
         val isRecent = typeLower == "recents" || typeLower == "recent"
         val isDocs = typeLower == "documents" || typeLower == "docs" || typeLower == "document" || typeLower == "doc"
+        val isArchives = typeLower == "archives" || typeLower == "archive"
 
         val uri = when {
             typeLower in listOf("videos", "video") -> MediaStore.Video.Media.EXTERNAL_CONTENT_URI
             typeLower in listOf("photos", "images", "photo", "image") -> MediaStore.Images.Media.EXTERNAL_CONTENT_URI
             typeLower in listOf("audio") -> MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
-            isRecent || isDocs -> MediaStore.Files.getContentUri("external")
+            isRecent || isDocs || isArchives -> MediaStore.Files.getContentUri("external")
             else -> null
         } ?: return list
 
@@ -158,13 +229,28 @@ class MainActivity : FlutterActivity() {
         )
 
         val selection = when {
-            isRecent -> "${MediaStore.Files.FileColumns.MEDIA_TYPE} != ${MediaStore.Files.FileColumns.MEDIA_TYPE_NONE} AND ${MediaStore.MediaColumns.SIZE} > 0"
+            isRecent -> "${MediaStore.MediaColumns.SIZE} > 0 AND ${MediaStore.MediaColumns.DISPLAY_NAME} NOT LIKE '.%'"
             isDocs -> {
                 val docExtensions = listOf(
                     "%.pdf", "%.doc", "%.docx", "%.xls", "%.xlsx", "%.ppt", "%.pptx",
-                    "%.txt", "%.csv", "%.rtf", "%.zip", "%.rar", "%.7z", "%.apk"
+                    "%.txt", "%.csv", "%.rtf", "%.md", "%.json", "%.xml", "%.yaml", "%.yml",
+                    "%.html", "%.epub", "%.mobi", "%.odt", "%.ods", "%.odp",
+                    "%.dwg", "%.dxf", "%.stl", "%.obj", "%.step", "%.stp",
+                    "%.sldprt", "%.sldasm", "%.blend", "%.psd", "%.ai",
+                    "%.py", "%.dart", "%.js", "%.ts", "%.java", "%.kt", "%.cpp", "%.c", "%.sql"
                 )
                 val extConditions = docExtensions.joinToString(" OR ") {
+                    "${MediaStore.MediaColumns.DISPLAY_NAME} LIKE '$it'"
+                }
+                "${MediaStore.MediaColumns.SIZE} > 0 AND ($extConditions)"
+            }
+            isArchives -> {
+                val archiveExtensions = listOf(
+                    "%.zip", "%.rar", "%.7z", "%.tar", "%.gz", "%.bz2", "%.xz", "%.iso",
+                    "%.apk", "%.xapk", "%.apkm", "%.aab", "%.exe", "%.msi", "%.dmg",
+                    "%.deb", "%.rpm", "%.bin"
+                )
+                val extConditions = archiveExtensions.joinToString(" OR ") {
                     "${MediaStore.MediaColumns.DISPLAY_NAME} LIKE '$it'"
                 }
                 "${MediaStore.MediaColumns.SIZE} > 0 AND ($extConditions)"
@@ -404,6 +490,18 @@ class MainActivity : FlutterActivity() {
                         val items = queryMediaStoreFiles(mediaType)
                         runOnUiThread {
                             result.success(items)
+                        }
+                    }.start()
+                }
+                "queryInstalledApps" -> {
+                    Thread {
+                        val apps = try {
+                            queryInstalledApps()
+                        } catch (_: Exception) {
+                            emptyList<Map<String, Any>>()
+                        }
+                        runOnUiThread {
+                            result.success(apps)
                         }
                     }.start()
                 }

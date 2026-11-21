@@ -95,15 +95,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                   controller: _controller,
                                   decoration: InputDecoration(
                                     hintText: l10n.settingsDeviceNameHint,
+                                    hintStyle: TextStyle(color: AppColors.textSecondaryOf(context)),
                                     filled: true,
-                                    fillColor: Colors.black.withValues(alpha: 0.04),
+                                    fillColor: AppColors.subtleFillOf(context),
                                     border: OutlineInputBorder(
                                       borderRadius: BorderRadius.circular(16),
                                       borderSide: BorderSide.none,
                                     ),
-                                    prefixIcon: const Icon(Icons.devices_rounded, size: 20),
+                                    prefixIcon: Icon(
+                                      Icons.devices_rounded,
+                                      size: 20,
+                                      color: AppColors.textSecondaryOf(context),
+                                    ),
                                   ),
-                                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w700,
+                                    color: AppColors.textPrimaryOf(context),
+                                  ),
                                   onChanged: (val) => devProv.updateDisplayName(val),
                                 ),
                               ],
@@ -153,9 +162,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                         localeProv.isDarkMode
                                             ? 'Dark theme enabled'
                                             : 'Switch between light and dark theme',
-                                        style: const TextStyle(
+                                        style: TextStyle(
                                           fontSize: 11,
-                                          color: AppColors.textSecondary,
+                                          color: AppColors.textSecondaryOf(context),
                                         ),
                                       ),
                                     ],
@@ -216,12 +225,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                         decoration: BoxDecoration(
                                           color: isSelected
                                               ? AppColors.primary
-                                              : Colors.black.withValues(alpha: 0.04),
+                                              : AppColors.subtleFillOf(context),
                                           borderRadius: BorderRadius.circular(14),
                                           border: Border.all(
                                             color: isSelected
                                                 ? AppColors.primary
-                                                : Colors.black.withValues(alpha: 0.06),
+                                                : AppColors.subtleBorderOf(context),
                                             width: 1.2,
                                           ),
                                           boxShadow: isSelected
@@ -246,7 +255,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                               style: TextStyle(
                                                 fontSize: 13,
                                                 fontWeight: isSelected ? FontWeight.w700 : FontWeight.w600,
-                                                color: isSelected ? Colors.white : AppColors.textPrimary,
+                                                color: isSelected ? Colors.white : AppColors.textPrimaryOf(context),
                                               ),
                                             ),
                                           ],
@@ -296,12 +305,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                         children: [
                                           Text(
                                             l10n.settingsSendSnapFolder,
-                                            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.textPrimary),
+                                            style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.textPrimaryOf(context)),
                                           ),
                                           const SizedBox(height: 2),
-                                          const Text(
+                                          Text(
                                             'Downloads/SendSnap',
-                                            style: TextStyle(fontSize: 11, color: AppColors.textSecondary),
+                                            style: TextStyle(fontSize: 11, color: AppColors.textSecondaryOf(context)),
                                           ),
                                         ],
                                       ),
@@ -371,12 +380,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                           children: [
                                             Text(
                                               l10n.settingsLaunchStartup,
-                                              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.textPrimary),
+                                              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.textPrimaryOf(context)),
                                             ),
                                             const SizedBox(height: 2),
                                             Text(
                                               l10n.settingsLaunchStartupDesc,
-                                              style: const TextStyle(fontSize: 11, color: AppColors.textSecondary),
+                                              style: TextStyle(fontSize: 11, color: AppColors.textSecondaryOf(context)),
                                             ),
                                           ],
                                         ),
@@ -414,12 +423,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                           children: [
                                             Text(
                                               l10n.settingsTaskbarTray,
-                                              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.textPrimary),
+                                              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.textPrimaryOf(context)),
                                             ),
                                             const SizedBox(height: 2),
                                             Text(
                                               l10n.settingsTaskbarTrayDesc,
-                                              style: const TextStyle(fontSize: 11, color: AppColors.textSecondary),
+                                              style: TextStyle(fontSize: 11, color: AppColors.textSecondaryOf(context)),
                                             ),
                                           ],
                                         ),
@@ -443,7 +452,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             const SizedBox(height: 16),
                           ],
 
-                          _buildEcosystemCard(),
+                          _buildEcosystemCard(context),
                           const SizedBox(height: 16),
 
                           BouncingCard(
@@ -479,19 +488,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                       children: [
                                         Text(
                                           l10n.settingsRateApp,
-                                          style: const TextStyle(
+                                          style: TextStyle(
                                             fontSize: 15,
                                             fontWeight: FontWeight.w700,
-                                            color: AppColors.textPrimary,
+                                            color: AppColors.textPrimaryOf(context),
                                           ),
                                         ),
                                         const SizedBox(height: 2),
                                         Text(
                                           l10n.settingsRateAppDesc,
-                                          style: const TextStyle(
+                                          style: TextStyle(
                                             fontSize: 11,
                                             fontWeight: FontWeight.w500,
-                                            color: AppColors.textSecondary,
+                                            color: AppColors.textSecondaryOf(context),
                                           ),
                                         ),
                                       ],
@@ -499,7 +508,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                   ),
                                   Transform.flip(
                                     flipX: isRtl,
-                                    child: const Icon(Icons.arrow_forward_ios_rounded, size: 14, color: AppColors.textSecondary),
+                                    child: Icon(Icons.arrow_forward_ios_rounded, size: 14, color: AppColors.textSecondaryOf(context)),
                                   ),
                                 ],
                               ),
@@ -546,25 +555,25 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                         children: [
                                           Text(
                                             l10n.settingsGetDesktop.replaceAll(' / Mac', '').replaceAll('/Mac', ''),
-                                            style: const TextStyle(
+                                            style: TextStyle(
                                               fontSize: 15,
                                               fontWeight: FontWeight.w700,
-                                              color: AppColors.textPrimary,
+                                              color: AppColors.textPrimaryOf(context),
                                             ),
                                           ),
                                           const SizedBox(height: 2),
                                           Text(
                                             l10n.settingsGetDesktopDesc.replaceAll(', Mac,', ' and').replaceAll(' / Mac', ''),
-                                            style: const TextStyle(
+                                            style: TextStyle(
                                               fontSize: 11,
                                               fontWeight: FontWeight.w500,
-                                              color: AppColors.textSecondary,
+                                              color: AppColors.textSecondaryOf(context),
                                             ),
                                           ),
                                         ],
                                       ),
                                     ),
-                                    const Icon(Icons.open_in_new_rounded, size: 16, color: AppColors.textSecondary),
+                                    Icon(Icons.open_in_new_rounded, size: 16, color: AppColors.textSecondaryOf(context)),
                                   ],
                                 ),
                               ),
@@ -573,11 +582,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           ],
 
                           const SizedBox(height: 28),
-                          const Center(
+                          Center(
                             child: Text(
-                              'SendSnap v2.2.8',
+                              'SendSnap v2.2.9',
                               style: TextStyle(
-                                color: AppColors.textSecondary,
+                                color: AppColors.textSecondaryOf(context),
                                 fontSize: 13,
                                 fontWeight: FontWeight.w500,
                               ),
@@ -607,20 +616,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
             child: Container(
               padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.8),
+                color: AppColors.surfaceOf(context),
                 shape: BoxShape.circle,
-                border: Border.all(color: Colors.white.withValues(alpha: 0.9), width: 1),
+                border: Border.all(color: AppColors.inkOf(context), width: 1.6),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.04),
-                    blurRadius: 8,
-                    offset: const Offset(0, 2),
+                    color: AppColors.isDark(context)
+                        ? Colors.black.withValues(alpha: 0.7)
+                        : AppColors.ink,
+                    blurRadius: 0,
+                    offset: const Offset(2, 2.5),
                   ),
                 ],
               ),
               child: Transform.flip(
                 flipX: isRtl,
-                child: const Icon(Icons.arrow_back_rounded, size: 20, color: AppColors.textPrimary),
+                child: Icon(Icons.arrow_back_rounded, size: 20, color: AppColors.textPrimaryOf(context)),
               ),
             ),
           ),
@@ -628,11 +639,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
           Expanded(
             child: Text(
               l10n.settingsTitle,
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 22,
                 fontWeight: FontWeight.w800,
                 letterSpacing: -0.5,
-                color: AppColors.textPrimary,
+                color: AppColors.textPrimaryOf(context),
               ),
             ),
           ),
@@ -641,7 +652,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  Widget _buildEcosystemCard() {
+  Widget _buildEcosystemCard(BuildContext context) {
     return GlassContainer(
       blur: 20,
       opacity: 0.75,
@@ -665,7 +676,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                 decoration: BoxDecoration(
-                  color: AppColors.primary.withValues(alpha: 0.1),
+                  color: AppColors.primary.withValues(alpha: 0.14),
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: const Text(
@@ -703,7 +714,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 child: const Icon(Icons.auto_stories_rounded, color: Colors.white, size: 22),
               ),
               const SizedBox(width: 14),
-              const Expanded(
+              Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -711,19 +722,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       children: [
                         Text(
                           'Pagelit',
-                          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: AppColors.textPrimary),
+                          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: AppColors.textPrimaryOf(context)),
                         ),
-                        SizedBox(width: 8),
+                        const SizedBox(width: 8),
                         Text(
                           'PDF & Office',
-                          style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.w700, color: AppColors.textSecondary),
+                          style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.w700, color: AppColors.textSecondaryOf(context)),
                         ),
                       ],
                     ),
-                    SizedBox(height: 3),
+                    const SizedBox(height: 3),
                     Text(
                       'Distraction-free viewer & reader for PDF, Word, PowerPoint & Excel documents received via SendSnap.',
-                      style: TextStyle(fontSize: 11, color: AppColors.textSecondary, height: 1.3),
+                      style: TextStyle(fontSize: 11, color: AppColors.textSecondaryOf(context), height: 1.3),
                     ),
                   ],
                 ),

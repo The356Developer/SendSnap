@@ -70,17 +70,9 @@ class _RateUsDialogState extends State<RateUsDialog> with SingleTickerProviderSt
           constraints: const BoxConstraints(maxWidth: 380),
           child: GlassContainer(
             blur: 28,
-            opacity: 0.90,
+            opacity: 0.94,
             borderRadius: 32,
             padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 28),
-            borderColor: Colors.white.withValues(alpha: 0.9),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.12),
-                blurRadius: 28,
-                offset: const Offset(0, 10),
-              ),
-            ],
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -116,11 +108,11 @@ class _RateUsDialogState extends State<RateUsDialog> with SingleTickerProviderSt
                 // Title
                 Text(
                   l10n.rateEnjoyingTitle,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 22,
                     fontWeight: FontWeight.w800,
                     letterSpacing: -0.4,
-                    color: AppColors.textPrimary,
+                    color: AppColors.textPrimaryOf(context),
                   ),
                 ),
                 const SizedBox(height: 8),
@@ -129,9 +121,9 @@ class _RateUsDialogState extends State<RateUsDialog> with SingleTickerProviderSt
                 Text(
                   l10n.rateEnjoyingDesc(_storeName),
                   textAlign: TextAlign.center,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 13,
-                    color: AppColors.textSecondary,
+                    color: AppColors.textSecondaryOf(context),
                     height: 1.4,
                   ),
                 ),
@@ -160,7 +152,9 @@ class _RateUsDialogState extends State<RateUsDialog> with SingleTickerProviderSt
                           child: Icon(
                             isFilled ? Icons.star_rounded : Icons.star_outline_rounded,
                             size: 38,
-                            color: isFilled ? const Color(0xFFFFB300) : Colors.black.withValues(alpha: 0.20),
+                            color: isFilled
+                                ? const Color(0xFFFFB300)
+                                : AppColors.textSecondaryOf(context).withValues(alpha: 0.35),
                           ),
                         ),
                       ),
@@ -221,8 +215,8 @@ class _RateUsDialogState extends State<RateUsDialog> with SingleTickerProviderSt
                   },
                   child: Text(
                     l10n.rateLater,
-                    style: const TextStyle(
-                      color: AppColors.textSecondary,
+                    style: TextStyle(
+                      color: AppColors.textSecondaryOf(context),
                       fontSize: 13,
                       fontWeight: FontWeight.w600,
                     ),

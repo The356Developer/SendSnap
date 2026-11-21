@@ -73,11 +73,11 @@ class PortalGhostCard extends StatelessWidget {
                     height: cardHeight,
                     padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                     decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.85),
+                      color: AppColors.surfaceOf(context).withValues(alpha: 0.92),
                       borderRadius: BorderRadius.circular(24),
                       border: Border.all(
-                        color: Colors.white.withValues(alpha: 0.9),
-                        width: 1.2,
+                        color: AppColors.inkOf(context),
+                        width: 1.6,
                       ),
                       boxShadow: [
                         BoxShadow(
@@ -121,11 +121,11 @@ class PortalGhostCard extends StatelessWidget {
                                 fileName.isEmpty ? 'Incoming Transfer' : fileName,
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
+                                style: TextStyle(
                                   fontSize: 13,
-                                  fontWeight: FontWeight.w400, // Light and crisp
+                                  fontWeight: FontWeight.w600,
                                   letterSpacing: 0.5,
-                                  color: AppColors.textPrimary,
+                                  color: AppColors.textPrimaryOf(context),
                                 ),
                               ),
                               const SizedBox(height: 3),
