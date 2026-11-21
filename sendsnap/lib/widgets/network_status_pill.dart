@@ -1,7 +1,7 @@
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../config/constants.dart';
+import '../l10n/app_localizations.dart';
 import '../providers/device_provider.dart';
 import 'glass_container.dart';
 import 'bouncing_card.dart';
@@ -43,20 +43,12 @@ class _NetworkStatusPillState extends State<NetworkStatusPill>
     super.dispose();
   }
 
-  String _buildLabel(bool hasLan, bool hasDirect) {
-    String base;
-    if (hasLan && hasDirect) {
-      base = 'Wi-Fi + Direct Ready';
-    } else if (hasLan) {
-      base = 'Wi-Fi Connected';
-    } else if (hasDirect) {
-      base = 'Direct Wi-Fi Ready';
-    } else {
-      return Platform.isAndroid
-          ? 'Turn On Wi-Fi (Tap)'
-          : 'No Wi-Fi (Tap for help)';
+  String _buildLabel(BuildContext context, bool isReady) {
+    final l10n = AppLocalizations.of(context);
+    if (!isReady) {
+      return l10n?.homeWifiDisconnected ?? 'No Wi-Fi';
     }
-
+    final base = l10n?.homeWifiConnected ?? 'Wi-Fi Connected';
     if (!widget.devProv.isAdvertising && widget.devProv.warmDiscoveredCount > 0) {
       return '$base • ${widget.devProv.warmDiscoveredCount} nearby';
     }
@@ -68,9 +60,7 @@ class _NetworkStatusPillState extends State<NetworkStatusPill>
     final hasLan = widget.devProv.hasLanIp;
     final hasDirect = widget.devProv.hasDirectWifiReady;
     final isReady = hasLan || hasDirect;
-    final dotColor = hasLan
-        ? AppColors.success
-        : (hasDirect ? AppColors.primary : AppColors.warning);
+    final dotColor = isReady ? AppColors.success : AppColors.warning;
 
     return BouncingCard(
       onTap: () {
@@ -120,7 +110,7 @@ class _NetworkStatusPillState extends State<NetworkStatusPill>
 
             // Network Info Text
             Text(
-              _buildLabel(hasLan, hasDirect),
+              _buildLabel(context, isReady),
               style: TextStyle(
                 fontSize: 12,
                 fontWeight: FontWeight.w600,

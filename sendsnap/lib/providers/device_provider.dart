@@ -78,6 +78,10 @@ class DeviceProvider with ChangeNotifier {
       forceRefresh: forceRefresh,
     );
     _directStatus = await _nearbyService.directP2p.getDirectStatus();
+    if (hasAnyNetworkReady && _lastError != null) {
+      _lastError = null;
+      _lastErrorIsWifiOff = false;
+    }
     notifyListeners();
   }
 
@@ -131,10 +135,11 @@ class DeviceProvider with ChangeNotifier {
     _nearbyService.onWifiStateChanged = (enabled) async {
       await refreshNetworkStatus(forceRefresh: true);
       if (enabled) {
+        _lastError = null;
+        _lastErrorIsWifiOff = false;
+        notifyListeners();
         if (_pendingActiveDiscoveryAfterWifi) {
           _pendingActiveDiscoveryAfterWifi = false;
-          _lastError = null;
-          _lastErrorIsWifiOff = false;
           await startActiveDiscovery();
         } else if (!_isAdvertising && !_isDiscovering) {
           await initWarmDiscovery();

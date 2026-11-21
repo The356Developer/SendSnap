@@ -31,8 +31,13 @@ class GlassContainer extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final baseColor = color ?? Colors.white;
-    final effectiveBorderColor = borderColor ?? Colors.white.withValues(alpha: 0.45);
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final baseColor =
+        color ?? (isDark ? const Color(0xFF1C212C) : Colors.white);
+    final effectiveBorderColor = borderColor ??
+        (isDark
+            ? Colors.white.withValues(alpha: 0.12)
+            : Colors.white.withValues(alpha: 0.45));
 
     final innerDecoration = BoxDecoration(
       color: baseColor.withValues(alpha: opacity),

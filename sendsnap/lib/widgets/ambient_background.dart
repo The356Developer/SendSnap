@@ -16,13 +16,15 @@ class AmbientBackground extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final size = MediaQuery.of(context).size;
+    final effectiveDark =
+        isDark || Theme.of(context).brightness == Brightness.dark;
 
     return Stack(
       children: [
         // Base canvas
         Positioned.fill(
           child: Container(
-            color: isDark ? const Color(0xFF0D0F14) : const Color(0xFFF7F9FD),
+            color: effectiveDark ? const Color(0xFF0D0F14) : const Color(0xFFF7F9FD),
           ),
         ),
 
@@ -38,7 +40,7 @@ class AmbientBackground extends StatelessWidget {
                 shape: BoxShape.circle,
                 gradient: RadialGradient(
                   colors: [
-                    const Color(0xFF3D5AFE).withValues(alpha: isDark ? 0.20 : 0.14),
+                    const Color(0xFF3D5AFE).withValues(alpha: effectiveDark ? 0.20 : 0.14),
                     const Color(0xFF3D5AFE).withValues(alpha: 0.0),
                   ],
                   stops: const [0.0, 0.75],
@@ -60,7 +62,7 @@ class AmbientBackground extends StatelessWidget {
                 shape: BoxShape.circle,
                 gradient: RadialGradient(
                   colors: [
-                    const Color(0xFF00D2FF).withValues(alpha: isDark ? 0.16 : 0.12),
+                    const Color(0xFF00D2FF).withValues(alpha: effectiveDark ? 0.16 : 0.12),
                     const Color(0xFF00D2FF).withValues(alpha: 0.0),
                   ],
                   stops: const [0.0, 0.75],
@@ -82,7 +84,7 @@ class AmbientBackground extends StatelessWidget {
                 shape: BoxShape.circle,
                 gradient: RadialGradient(
                   colors: [
-                    const Color(0xFF7C4DFF).withValues(alpha: isDark ? 0.18 : 0.11),
+                    const Color(0xFF7C4DFF).withValues(alpha: effectiveDark ? 0.18 : 0.11),
                     const Color(0xFF7C4DFF).withValues(alpha: 0.0),
                   ],
                   stops: const [0.0, 0.75],

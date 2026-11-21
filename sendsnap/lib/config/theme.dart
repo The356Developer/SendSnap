@@ -3,13 +3,59 @@ import 'package:google_fonts/google_fonts.dart';
 import 'constants.dart';
 
 class AppTheme {
-  static ThemeData? _cachedLightTheme;
+  static ThemeData lightTheme({bool isArabic = false}) {
+    final TextTheme baseTextTheme = isArabic
+        ? GoogleFonts.cairoTextTheme()
+        : GoogleFonts.outfitTextTheme();
 
-  static ThemeData lightTheme() {
-    return _cachedLightTheme ??= _buildLightTheme();
-  }
+    final textTheme = baseTextTheme.copyWith(
+      displayLarge: (isArabic ? GoogleFonts.cairo : GoogleFonts.outfit)(
+        color: AppColors.textPrimary,
+        fontWeight: FontWeight.bold,
+        fontSize: 30,
+        letterSpacing: isArabic ? 0.0 : -0.5,
+        height: isArabic ? 1.3 : 1.2,
+      ),
+      titleLarge: (isArabic ? GoogleFonts.cairo : GoogleFonts.outfit)(
+        color: AppColors.textPrimary,
+        fontWeight: FontWeight.w700,
+        fontSize: 20,
+        letterSpacing: isArabic ? 0.0 : -0.2,
+        height: isArabic ? 1.35 : 1.25,
+      ),
+      titleMedium: (isArabic ? GoogleFonts.cairo : GoogleFonts.outfit)(
+        color: AppColors.textPrimary,
+        fontWeight: FontWeight.w600,
+        fontSize: 16,
+        letterSpacing: 0.0,
+        height: isArabic ? 1.35 : 1.25,
+      ),
+      bodyLarge: (isArabic ? GoogleFonts.cairo : GoogleFonts.outfit)(
+        color: AppColors.textPrimary,
+        fontSize: 15,
+        letterSpacing: 0.0,
+        height: isArabic ? 1.4 : 1.3,
+      ),
+      bodyMedium: (isArabic ? GoogleFonts.cairo : GoogleFonts.outfit)(
+        color: AppColors.textSecondary,
+        fontSize: 13.5,
+        letterSpacing: 0.0,
+        height: isArabic ? 1.4 : 1.3,
+      ),
+      bodySmall: (isArabic ? GoogleFonts.cairo : GoogleFonts.outfit)(
+        color: AppColors.textSecondary,
+        fontSize: 11.5,
+        letterSpacing: 0.0,
+        height: isArabic ? 1.35 : 1.2,
+      ),
+      labelLarge: (isArabic ? GoogleFonts.cairo : GoogleFonts.outfit)(
+        color: AppColors.primary,
+        fontWeight: FontWeight.w800,
+        fontSize: 12,
+        letterSpacing: isArabic ? 0.0 : 1.0,
+      ),
+    );
 
-  static ThemeData _buildLightTheme() {
     return ThemeData(
       useMaterial3: true,
       brightness: Brightness.light,
@@ -29,26 +75,7 @@ class AppTheme {
         secondary: AppColors.secondary,
       ),
       scaffoldBackgroundColor: AppColors.background,
-      textTheme: GoogleFonts.outfitTextTheme().copyWith(
-        displayLarge: GoogleFonts.outfit(
-          color: AppColors.textPrimary,
-          fontWeight: FontWeight.bold,
-          fontSize: 32,
-        ),
-        titleLarge: GoogleFonts.outfit(
-          color: AppColors.textPrimary,
-          fontWeight: FontWeight.w600,
-          fontSize: 20,
-        ),
-        bodyLarge: GoogleFonts.outfit(
-          color: AppColors.textPrimary,
-          fontSize: 16,
-        ),
-        bodyMedium: GoogleFonts.outfit(
-          color: AppColors.textSecondary,
-          fontSize: 14,
-        ),
-      ),
+      textTheme: textTheme,
       cardTheme: CardThemeData(
         color: AppColors.surface,
         elevation: 0,
@@ -66,9 +93,116 @@ class AppTheme {
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16),
           ),
-          textStyle: GoogleFonts.outfit(
+          textStyle: (isArabic ? GoogleFonts.cairo : GoogleFonts.outfit)(
             fontWeight: FontWeight.bold,
-            fontSize: 16,
+            fontSize: 15,
+            letterSpacing: 0.0,
+          ),
+        ),
+      ),
+    );
+  }
+
+  static ThemeData darkTheme({bool isArabic = false}) {
+    const darkBg = Color(0xFF0D0F14);
+    const darkSurface = Color(0xFF171B24);
+    const darkTextPrimary = Color(0xFFF3F5F8);
+    const darkTextSecondary = Color(0xFF9BA3B4);
+
+    final TextTheme baseTextTheme = isArabic
+        ? GoogleFonts.cairoTextTheme(ThemeData.dark().textTheme)
+        : GoogleFonts.outfitTextTheme(ThemeData.dark().textTheme);
+
+    final textTheme = baseTextTheme.copyWith(
+      displayLarge: (isArabic ? GoogleFonts.cairo : GoogleFonts.outfit)(
+        color: darkTextPrimary,
+        fontWeight: FontWeight.bold,
+        fontSize: 30,
+        letterSpacing: isArabic ? 0.0 : -0.5,
+        height: isArabic ? 1.3 : 1.2,
+      ),
+      titleLarge: (isArabic ? GoogleFonts.cairo : GoogleFonts.outfit)(
+        color: darkTextPrimary,
+        fontWeight: FontWeight.w700,
+        fontSize: 20,
+        letterSpacing: isArabic ? 0.0 : -0.2,
+        height: isArabic ? 1.35 : 1.25,
+      ),
+      titleMedium: (isArabic ? GoogleFonts.cairo : GoogleFonts.outfit)(
+        color: darkTextPrimary,
+        fontWeight: FontWeight.w600,
+        fontSize: 16,
+        letterSpacing: 0.0,
+        height: isArabic ? 1.35 : 1.25,
+      ),
+      bodyLarge: (isArabic ? GoogleFonts.cairo : GoogleFonts.outfit)(
+        color: darkTextPrimary,
+        fontSize: 15,
+        letterSpacing: 0.0,
+        height: isArabic ? 1.4 : 1.3,
+      ),
+      bodyMedium: (isArabic ? GoogleFonts.cairo : GoogleFonts.outfit)(
+        color: darkTextSecondary,
+        fontSize: 13.5,
+        letterSpacing: 0.0,
+        height: isArabic ? 1.4 : 1.3,
+      ),
+      bodySmall: (isArabic ? GoogleFonts.cairo : GoogleFonts.outfit)(
+        color: darkTextSecondary,
+        fontSize: 11.5,
+        letterSpacing: 0.0,
+        height: isArabic ? 1.35 : 1.2,
+      ),
+      labelLarge: (isArabic ? GoogleFonts.cairo : GoogleFonts.outfit)(
+        color: AppColors.primaryLight,
+        fontWeight: FontWeight.w800,
+        fontSize: 12,
+        letterSpacing: isArabic ? 0.0 : 1.0,
+      ),
+    );
+
+    return ThemeData(
+      useMaterial3: true,
+      brightness: Brightness.dark,
+      pageTransitionsTheme: const PageTransitionsTheme(
+        builders: {
+          TargetPlatform.android: CupertinoPageTransitionsBuilder(),
+          TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
+          TargetPlatform.windows: CupertinoPageTransitionsBuilder(),
+          TargetPlatform.macOS: CupertinoPageTransitionsBuilder(),
+          TargetPlatform.linux: CupertinoPageTransitionsBuilder(),
+        },
+      ),
+      colorScheme: ColorScheme.fromSeed(
+        brightness: Brightness.dark,
+        seedColor: AppColors.primary,
+        surface: darkSurface,
+        primary: AppColors.primary,
+        secondary: AppColors.secondary,
+      ),
+      scaffoldBackgroundColor: darkBg,
+      textTheme: textTheme,
+      cardTheme: CardThemeData(
+        color: darkSurface,
+        elevation: 0,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(24),
+          side: BorderSide(color: Colors.white.withValues(alpha: 0.08)),
+        ),
+      ),
+      elevatedButtonTheme: ElevatedButtonThemeData(
+        style: ElevatedButton.styleFrom(
+          backgroundColor: AppColors.primary,
+          foregroundColor: Colors.white,
+          elevation: 0,
+          padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          textStyle: (isArabic ? GoogleFonts.cairo : GoogleFonts.outfit)(
+            fontWeight: FontWeight.bold,
+            fontSize: 15,
+            letterSpacing: 0.0,
           ),
         ),
       ),
