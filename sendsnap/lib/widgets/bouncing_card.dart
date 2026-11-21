@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 
+/// Style A — Tactile Comic / Ink Stamp Press Animation.
+/// On tap down, the card physically presses into its offset ink shadow
+/// with a subtle hand-drawn tilt.
 class BouncingCard extends StatefulWidget {
   final Widget child;
   final VoidCallback? onTap;
@@ -10,17 +13,18 @@ class BouncingCard extends StatefulWidget {
     super.key,
     required this.child,
     this.onTap,
-    this.scaleFactor = 0.96,
-    this.duration = const Duration(milliseconds: 110),
+    this.scaleFactor = 0.97,
+    this.duration = const Duration(milliseconds: 95),
   });
 
   @override
   State<BouncingCard> createState() => _BouncingCardState();
 }
 
-class _BouncingCardState extends State<BouncingCard> with SingleTickerProviderStateMixin {
+class _BouncingCardState extends State<BouncingCard>
+    with SingleTickerProviderStateMixin {
   late AnimationController _controller;
-  late Animation<double> _scaleAnimation;
+  late Animation<double> _pressProgress;
 
   @override
   void initState() {
@@ -28,16 +32,13 @@ class _BouncingCardState extends State<BouncingCard> with SingleTickerProviderSt
     _controller = AnimationController(
       vsync: this,
       duration: widget.duration,
-      reverseDuration: const Duration(milliseconds: 180),
+      reverseDuration: const Duration(milliseconds: 140),
     );
-    _scaleAnimation = Tween<double>(
-      begin: 1.0,
-      end: widget.scaleFactor,
-    ).animate(CurvedAnimation(
+    _pressProgress = CurvedAnimation(
       parent: _controller,
-      curve: Curves.easeInOut,
+      curve: Curves.easeOutQuad,
       reverseCurve: Curves.easeOutBack,
-    ));
+    );
   }
 
   @override
@@ -67,12 +68,19 @@ class _BouncingCardState extends State<BouncingCard> with SingleTickerProviderSt
       onTap: widget.onTap,
       behavior: HitTestBehavior.opaque,
       child: AnimatedBuilder(
-        animation: _scaleAnimation,
+        animation: _pressProgress,
         child: widget.child,
         builder: (context, child) {
-          return Transform.scale(
-            scale: _scaleAnimation.value,
-            child: child,
+          final t = _pressProgress.value;
+          final dx = 2.5 * t;
+          final dy = 3.0 * t;
+          final scale = 1.0 - ((1.0 - widget.scaleFactor) * t);
+          return Transform.translate(
+            offset: Offset(dx, dy),
+            child: Transform.scale(
+              scale: scale,
+              child: child,
+            ),
           );
         },
       ),

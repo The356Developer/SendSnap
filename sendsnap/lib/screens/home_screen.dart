@@ -309,7 +309,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                                       CrossAxisAlignment.stretch,
                                   children: [
                                     _buildHeader(context, devProv),
-                                    const SizedBox(height: AppSpacing.l),
+                                    const SizedBox(height: AppSpacing.m),
                                     AnimatedSwitcher(
                                       duration:
                                           const Duration(milliseconds: 350),
@@ -461,19 +461,17 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     final isBusy = devProv.isAdvertising || devProv.isDiscovering;
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final titleColor = isDark ? Colors.white : AppColors.textPrimary;
+    final inkBorder = isDark ? AppColors.chalkInk : AppColors.ink;
+    final isCompact = MediaQuery.sizeOf(context).width < 390;
 
     return GlassContainer(
       blur: 25,
       opacity: 0.72,
-      borderRadius: 28,
-      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
-      boxShadow: [
-        BoxShadow(
-          color: Colors.black.withValues(alpha: 0.04),
-          blurRadius: 20,
-          offset: const Offset(0, 6),
-        ),
-      ],
+      borderRadius: 26,
+      padding: EdgeInsets.symmetric(
+        horizontal: isCompact ? 12 : 16,
+        vertical: 12,
+      ),
       child: Row(
         children: [
           if (isBusy) ...[
@@ -488,34 +486,20 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                   });
                 },
                 child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  width: 38,
+                  height: 38,
                   decoration: BoxDecoration(
-                    color: AppColors.error.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(18),
+                    color: AppColors.error.withValues(alpha: 0.14),
+                    shape: BoxShape.circle,
                     border: Border.all(
-                      color: AppColors.error.withValues(alpha: 0.25),
-                      width: 1,
+                      color: AppColors.error,
+                      width: 1.8,
                     ),
                   ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(
-                        Icons.arrow_back_rounded,
-                        size: 18,
-                        color: AppColors.error,
-                      ),
-                      const SizedBox(width: 4),
-                      Text(
-                        l10n?.commonBack ?? 'Back',
-                        style: const TextStyle(
-                          color: AppColors.error,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 13,
-                        ),
-                      ),
-                    ],
+                  child: const Icon(
+                    Icons.arrow_back_rounded,
+                    size: 19,
+                    color: AppColors.error,
                   ),
                 ),
               ),
@@ -523,95 +507,110 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             const SizedBox(width: 10),
           ],
           Container(
-            padding: const EdgeInsets.all(3),
+            padding: const EdgeInsets.all(2.5),
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               gradient: AppColors.primaryGradient,
-              boxShadow: [
-                BoxShadow(
-                  color: AppColors.primary.withValues(alpha: 0.3),
-                  blurRadius: 10,
-                  offset: const Offset(0, 3),
-                ),
-              ],
+              border: Border.all(color: inkBorder, width: 1.6),
             ),
             child: CircleAvatar(
-              radius: 18,
+              radius: isCompact ? 16 : 17,
               backgroundColor: Colors.white,
-              child: Image.asset('assets/icon/app_icon.png', height: 26),
+              child: Image.asset(
+                'assets/icon/app_icon.png',
+                height: isCompact ? 22 : 24,
+              ),
             ),
           ),
-          const SizedBox(width: 14),
+          const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text(
-                  'SendSnap',
-                  style: TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: -0.5,
-                    color: titleColor,
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: AlignmentDirectional.centerStart,
+                  child: Text(
+                    'SendSnap',
+                    maxLines: 1,
+                    softWrap: false,
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: -0.5,
+                      color: titleColor,
+                      height: 1.15,
+                    ),
                   ),
                 ),
-                Text(
-                  devProv.displayName,
-                  style: const TextStyle(
-                    fontSize: 12.5,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.primary,
+                const SizedBox(height: 1),
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: AlignmentDirectional.centerStart,
+                  child: Text(
+                    devProv.displayName,
+                    maxLines: 1,
+                    softWrap: false,
+                    style: const TextStyle(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.primary,
+                    ),
                   ),
-                  overflow: TextOverflow.ellipsis,
                 ),
               ],
             ),
           ),
-          Tooltip(
-            message: l10n?.settingsLanguage ?? 'Language',
-            child: BouncingCard(
-              onTap: () => _showLanguageDialog(context),
-              child: Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: isDark
-                      ? Colors.white.withValues(alpha: 0.1)
-                      : Colors.white.withValues(alpha: 0.8),
-                  shape: BoxShape.circle,
-                  border: Border.all(
-                    color: Colors.white.withValues(alpha: isDark ? 0.16 : 0.9),
-                    width: 1,
+          const SizedBox(width: 8),
+          if (!isBusy) ...[
+            Tooltip(
+              message: l10n?.settingsLanguage ?? 'Language',
+              child: BouncingCard(
+                onTap: () => _showLanguageDialog(context),
+                child: Container(
+                  width: 38,
+                  height: 38,
+                  decoration: BoxDecoration(
+                    color: isDark
+                        ? Colors.white.withValues(alpha: 0.08)
+                        : AppColors.surface,
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: inkBorder.withValues(alpha: 0.75),
+                      width: 1.6,
+                    ),
                   ),
-                ),
-                child: const Icon(
-                  Icons.language_rounded,
-                  size: 20,
-                  color: AppColors.primary,
+                  child: const Icon(
+                    Icons.language_rounded,
+                    size: 19,
+                    color: AppColors.primary,
+                  ),
                 ),
               ),
             ),
-          ),
-          const SizedBox(width: 8),
+            const SizedBox(width: 8),
+          ],
           Tooltip(
             message: l10n?.settingsTitle ?? 'Settings',
             child: BouncingCard(
               onTap: () => Navigator.pushNamed(context, '/settings'),
               child: Container(
-                padding: const EdgeInsets.all(10),
+                width: 38,
+                height: 38,
                 decoration: BoxDecoration(
                   color: isDark
-                      ? Colors.white.withValues(alpha: 0.1)
-                      : Colors.white.withValues(alpha: 0.8),
+                      ? Colors.white.withValues(alpha: 0.08)
+                      : AppColors.surface,
                   shape: BoxShape.circle,
                   border: Border.all(
-                    color: Colors.white.withValues(alpha: isDark ? 0.16 : 0.9),
-                    width: 1,
+                    color: inkBorder.withValues(alpha: 0.75),
+                    width: 1.6,
                   ),
                 ),
                 child: Icon(
                   Icons.settings_rounded,
-                  size: 20,
+                  size: 19,
                   color: titleColor,
                 ),
               ),
@@ -943,21 +942,29 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         }
       },
       child: Container(
-        width: 138,
+        width: 148,
         height: 172,
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(22),
+          borderRadius: BorderRadius.circular(20),
           color: const Color(0xFF1E2430),
+          border: Border.all(
+            color: Theme.of(context).brightness == Brightness.dark
+                ? AppColors.chalkInk
+                : AppColors.ink,
+            width: 2.0,
+          ),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withValues(alpha: 0.10),
-              blurRadius: 14,
-              offset: const Offset(0, 5),
+              color: Theme.of(context).brightness == Brightness.dark
+                  ? Colors.black.withValues(alpha: 0.8)
+                  : AppColors.ink,
+              blurRadius: 0,
+              offset: const Offset(3.5, 4.0),
             ),
           ],
         ),
         child: ClipRRect(
-          borderRadius: BorderRadius.circular(22),
+          borderRadius: BorderRadius.circular(18),
           child: Stack(
             fit: StackFit.expand,
             children: [
@@ -978,10 +985,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                     gradient: LinearGradient(
                       begin: Alignment.topCenter,
                       end: Alignment.bottomCenter,
-                      stops: const [0.35, 1.0],
+                      stops: const [0.30, 1.0],
                       colors: [
                         Colors.transparent,
-                        Colors.black.withValues(alpha: 0.78),
+                        Colors.black.withValues(alpha: 0.82),
                       ],
                     ),
                   ),
@@ -1018,34 +1025,39 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
               // Bottom filename & caption
               Positioned(
-                left: 12,
-                right: 12,
-                bottom: 12,
+                left: 11,
+                right: 11,
+                bottom: 11,
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Text(
                       item.name,
-                      maxLines: 1,
+                      maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
                         color: Colors.white,
-                        fontSize: 12.5,
+                        fontSize: 12,
                         fontWeight: FontWeight.w700,
+                        height: 1.2,
                       ),
                     ),
-                    const SizedBox(height: 2),
-                    Text(
-                      item.formattedSize.isNotEmpty
-                          ? 'SendSnap • ${item.formattedSize}'
-                          : 'SendSnap',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.78),
-                        fontSize: 10.5,
-                        fontWeight: FontWeight.w500,
+                    const SizedBox(height: 3),
+                    FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: AlignmentDirectional.centerStart,
+                      child: Text(
+                        item.formattedSize.isNotEmpty
+                            ? 'SendSnap • ${item.formattedSize}'
+                            : 'SendSnap',
+                        maxLines: 1,
+                        softWrap: false,
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.78),
+                          fontSize: 10.5,
+                          fontWeight: FontWeight.w500,
+                        ),
                       ),
                     ),
                   ],
@@ -1097,96 +1109,139 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     required Color shadowColor,
     required VoidCallback onTap,
   }) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final inkBorder = isDark ? AppColors.chalkInk : AppColors.ink;
+
     return BouncingCard(
       onTap: onTap,
-      scaleFactor: 0.97,
+      scaleFactor: 0.98,
       child: Container(
-        height: 112,
+        height: 110,
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(30),
+          borderRadius: BorderRadius.circular(24),
           gradient: gradient,
+          border: Border.all(
+            color: inkBorder,
+            width: 2.4,
+          ),
           boxShadow: [
             BoxShadow(
-              color: shadowColor.withValues(alpha: 0.32),
-              blurRadius: 24,
-              offset: const Offset(0, 12),
-              spreadRadius: -4,
+              color: isDark
+                  ? Colors.black.withValues(alpha: 0.85)
+                  : AppColors.ink,
+              blurRadius: 0,
+              offset: const Offset(4.5, 5.5),
             ),
           ],
         ),
         child: ClipRRect(
-          borderRadius: BorderRadius.circular(30),
+          borderRadius: BorderRadius.circular(21.5),
           child: Stack(
             children: [
+              // Comic marker highlight band along the top edge
               Positioned(
-                right: -20,
-                bottom: -20,
+                top: 0,
+                left: 0,
+                right: 0,
+                height: 10,
+                child: ColoredBox(
+                  color: Colors.white.withValues(alpha: 0.18),
+                ),
+              ),
+              // Sketched corner accent circle
+              Positioned(
+                right: -18,
+                bottom: -22,
                 child: Container(
-                  width: 130,
-                  height: 130,
+                  width: 118,
+                  height: 118,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
                     color: Colors.white.withValues(alpha: 0.12),
+                    border: Border.all(
+                      color: Colors.white.withValues(alpha: 0.22),
+                      width: 1.8,
+                    ),
                   ),
                 ),
               ),
               Padding(
                 padding:
-                    const EdgeInsets.symmetric(horizontal: 22, vertical: 18),
+                    const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
                 child: Row(
                   children: [
+                    // Hand-inked white badge with dark ink border & offset shadow
                     Container(
-                      width: 58,
-                      height: 58,
+                      width: 54,
+                      height: 54,
                       decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.22),
+                        color: AppColors.surface,
                         shape: BoxShape.circle,
                         border: Border.all(
-                          color: Colors.white.withValues(alpha: 0.5),
-                          width: 1.5,
+                          color: AppColors.ink,
+                          width: 2.2,
                         ),
+                        boxShadow: const [
+                          BoxShadow(
+                            color: AppColors.ink,
+                            blurRadius: 0,
+                            offset: Offset(2.5, 3.0),
+                          ),
+                        ],
                       ),
-                      child: Icon(icon, color: Colors.white, size: 30),
+                      child: Icon(icon, color: shadowColor, size: 28),
                     ),
-                    const SizedBox(width: 18),
+                    const SizedBox(width: 14),
                     Expanded(
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(
-                            title,
-                            style: const TextStyle(
-                              fontSize: 21,
-                              fontWeight: FontWeight.w800,
-                              letterSpacing: 1.0,
-                              color: Colors.white,
+                          FittedBox(
+                            fit: BoxFit.scaleDown,
+                            alignment: AlignmentDirectional.centerStart,
+                            child: Text(
+                              title,
+                              maxLines: 1,
+                              softWrap: false,
+                              style: const TextStyle(
+                                fontSize: 22,
+                                fontWeight: FontWeight.w900,
+                                letterSpacing: 1.0,
+                                color: Colors.white,
+                              ),
                             ),
                           ),
                           const SizedBox(height: 3),
                           Text(
                             subtitle,
-                            maxLines: 1,
+                            maxLines: 2,
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
-                              fontSize: 12.5,
-                              fontWeight: FontWeight.w500,
-                              color: Colors.white.withValues(alpha: 0.9),
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              height: 1.2,
+                              color: Colors.white.withValues(alpha: 0.94),
                             ),
                           ),
                         ],
                       ),
                     ),
+                    const SizedBox(width: 10),
                     Container(
                       padding: const EdgeInsets.all(8),
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
-                        color: Colors.white.withValues(alpha: 0.15),
+                        color: Colors.white.withValues(alpha: 0.20),
+                        border: Border.all(
+                          color: Colors.white.withValues(alpha: 0.55),
+                          width: 1.6,
+                        ),
                       ),
                       child: const Icon(
-                        Icons.chevron_right_rounded,
+                        Icons.arrow_forward_rounded,
                         color: Colors.white,
-                        size: 22,
+                        size: 20,
                       ),
                     ),
                   ],
@@ -1298,7 +1353,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             blur: 20,
             opacity: 0.75,
             borderRadius: 24,
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
@@ -1317,30 +1372,40 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                           color: AppColors.success,
                         ),
                       ),
-                      const SizedBox(width: 14),
+                      const SizedBox(width: 12),
                       Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(
-                              l10n?.homeRadarReady ?? 'Ready to Receive',
-                              style: TextStyle(
-                                fontWeight: FontWeight.w800,
-                                fontSize: 15,
-                                color: titleColor,
+                            FittedBox(
+                              fit: BoxFit.scaleDown,
+                              alignment: AlignmentDirectional.centerStart,
+                              child: Text(
+                                l10n?.homeRadarReady ?? 'Ready to Receive',
+                                maxLines: 1,
+                                softWrap: false,
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w800,
+                                  fontSize: 15,
+                                  color: titleColor,
+                                ),
                               ),
-                              overflow: TextOverflow.ellipsis,
                             ),
                             if (devProv.hasLanIp && devProv.localIp != null) ...[
                               const SizedBox(height: 2),
-                              Text(
-                                BidiHelper.isolate(devProv.localIp!),
-                                style: const TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w600,
-                                  color: AppColors.textSecondary,
+                              FittedBox(
+                                fit: BoxFit.scaleDown,
+                                alignment: AlignmentDirectional.centerStart,
+                                child: Text(
+                                  BidiHelper.isolate(devProv.localIp!),
+                                  maxLines: 1,
+                                  softWrap: false,
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                    color: AppColors.textSecondary,
+                                  ),
                                 ),
-                                overflow: TextOverflow.ellipsis,
                               ),
                             ],
                           ],
@@ -1370,6 +1435,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                         const SizedBox(width: 6),
                         Text(
                           l10n?.homeQrCode ?? 'QR Code',
+                          maxLines: 1,
+                          softWrap: false,
                           style: const TextStyle(
                             color: Colors.white,
                             fontWeight: FontWeight.bold,
@@ -1411,7 +1478,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       blur: 16,
       opacity: 0.78,
       borderRadius: 22,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1442,16 +1509,23 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                   ),
                   const SizedBox(width: 10),
                   Expanded(
-                    child: Text(
-                      l10n?.homeRadarSearching ??
-                          'Looking for nearby devices...',
-                      style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w700,
-                        color: titleColor,
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: AlignmentDirectional.centerStart,
+                      child: Text(
+                        l10n?.homeRadarSearching ??
+                            'Looking for nearby devices...',
+                        maxLines: 1,
+                        softWrap: false,
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                          color: titleColor,
+                        ),
                       ),
                     ),
                   ),
+                  const SizedBox(width: 8),
                   Container(
                     padding:
                         const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
@@ -1464,6 +1538,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                       children: [
                         const Text(
                           'QR / IP',
+                          maxLines: 1,
+                          softWrap: false,
                           style: TextStyle(
                             fontSize: 11,
                             fontWeight: FontWeight.w700,
@@ -1502,29 +1578,37 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                   child: BouncingCard(
                     onTap: () => _handleScanQr(devProv, transProv),
                     child: Container(
-                      padding: const EdgeInsets.symmetric(vertical: 10),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 10,
+                      ),
                       decoration: BoxDecoration(
                         gradient: AppColors.primaryGradient,
                         borderRadius: BorderRadius.circular(14),
                       ),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          const Icon(
-                            Icons.qr_code_scanner_rounded,
-                            size: 17,
-                            color: Colors.white,
-                          ),
-                          const SizedBox(width: 7),
-                          Text(
-                            l10n?.homeScanQr ?? 'Scan QR',
-                            style: const TextStyle(
-                              fontSize: 12.5,
-                              fontWeight: FontWeight.w700,
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            const Icon(
+                              Icons.qr_code_scanner_rounded,
+                              size: 17,
                               color: Colors.white,
                             ),
-                          ),
-                        ],
+                            const SizedBox(width: 7),
+                            Text(
+                              l10n?.homeScanQr ?? 'Scan QR',
+                              maxLines: 1,
+                              softWrap: false,
+                              style: const TextStyle(
+                                fontSize: 12.5,
+                                fontWeight: FontWeight.w700,
+                                color: Colors.white,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   ),
@@ -1535,31 +1619,39 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                     onTap: () =>
                         _showManualIpDialog(context, devProv, transProv),
                     child: Container(
-                      padding: const EdgeInsets.symmetric(vertical: 10),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 10,
+                      ),
                       decoration: BoxDecoration(
                         color: isDark
                             ? Colors.white.withValues(alpha: 0.08)
                             : Colors.black.withValues(alpha: 0.05),
                         borderRadius: BorderRadius.circular(14),
                       ),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(
-                            Icons.edit_note_rounded,
-                            size: 18,
-                            color: titleColor,
-                          ),
-                          const SizedBox(width: 6),
-                          Text(
-                            l10n?.homeConnectManual ?? 'Enter IP',
-                            style: TextStyle(
-                              fontSize: 12.5,
-                              fontWeight: FontWeight.w700,
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              Icons.edit_note_rounded,
+                              size: 18,
                               color: titleColor,
                             ),
-                          ),
-                        ],
+                            const SizedBox(width: 6),
+                            Text(
+                              l10n?.homeConnectManual ?? 'Enter IP',
+                              maxLines: 1,
+                              softWrap: false,
+                              style: TextStyle(
+                                fontSize: 12.5,
+                                fontWeight: FontWeight.w700,
+                                color: titleColor,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   ),
@@ -1663,8 +1755,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                   offset: const Offset(0, 4),
                 ),
               ],
-              child: SizedBox(
-                width: 112,
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(minWidth: 124, maxWidth: 164),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   mainAxisAlignment: MainAxisAlignment.center,
@@ -1675,25 +1767,26 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                       device.endpointName,
                       style: TextStyle(
                         fontWeight: FontWeight.w700,
-                        fontSize: 13,
+                        fontSize: 12.5,
+                        height: 1.2,
                         color: isTargeted ? AppColors.primary : titleColor,
                       ),
-                      maxLines: 1,
+                      maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       textAlign: TextAlign.center,
                     ),
-                    const SizedBox(height: 2),
+                    const SizedBox(height: 3),
                     Text(
                       isTargeted
                           ? 'Drop to send'
                           : _getDeviceFriendlySubtitle(device.deviceType),
                       style: TextStyle(
-                        fontSize: 10,
+                        fontSize: 10.5,
                         color: isTargeted
                             ? AppColors.primary
                             : AppColors.textSecondary,
                         fontWeight:
-                            isTargeted ? FontWeight.w700 : FontWeight.w500,
+                            isTargeted ? FontWeight.w700 : FontWeight.w600,
                       ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,

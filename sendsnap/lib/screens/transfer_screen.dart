@@ -382,8 +382,10 @@ class _TransferScreenState extends State<TransferScreen> {
                                       failedCount: failedCount,
                                     ),
                                     textAlign: TextAlign.center,
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
                                     style: const TextStyle(
-                                      fontSize: 21,
+                                      fontSize: 20,
                                       fontWeight: FontWeight.w800,
                                       letterSpacing: -0.4,
                                       color: AppColors.textPrimary,
@@ -547,8 +549,10 @@ class _TransferScreenState extends State<TransferScreen> {
                         failedCount: failedCount,
                       ),
                       textAlign: TextAlign.center,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
-                        fontSize: 20,
+                        fontSize: 19,
                         fontWeight: FontWeight.w800,
                         letterSpacing: -0.3,
                         color: AppColors.textPrimary,
@@ -743,22 +747,27 @@ class _TransferScreenState extends State<TransferScreen> {
               color: AppColors.primary.withValues(alpha: 0.2),
             ),
           ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(Icons.bolt_rounded, color: AppColors.primary, size: 16),
-              const SizedBox(width: 4),
-              Text(
-                peer != null && peer.isNotEmpty
-                    ? '$formatted • $peer'
-                    : formatted,
-                style: const TextStyle(
-                  color: AppColors.primary,
-                  fontWeight: FontWeight.w800,
-                  fontSize: 12,
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.bolt_rounded, color: AppColors.primary, size: 16),
+                const SizedBox(width: 4),
+                Text(
+                  peer != null && peer.isNotEmpty
+                      ? '$formatted • $peer'
+                      : formatted,
+                  maxLines: 1,
+                  softWrap: false,
+                  style: const TextStyle(
+                    color: AppColors.primary,
+                    fontWeight: FontWeight.w800,
+                    fontSize: 12,
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         );
       }
@@ -1320,40 +1329,45 @@ class _TransferScreenState extends State<TransferScreen> {
                   children: [
                     Text(
                       file.fileName,
-                      maxLines: 1,
+                      maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
-                        fontSize: 14,
+                        fontSize: 13.5,
                         fontWeight: FontWeight.w700,
+                        height: 1.2,
                         color: AppColors.textPrimary,
                       ),
                     ),
                     const SizedBox(height: 3),
-                    Text.rich(
-                      TextSpan(
-                        children: [
-                          TextSpan(
-                            text:
-                                '${FileHandler.formatFileSize(file.fileSize)}${ext.isNotEmpty ? ' • $ext' : ''}',
-                            style: const TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w600,
-                              color: AppColors.textSecondary,
+                    FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: AlignmentDirectional.centerStart,
+                      child: Text.rich(
+                        TextSpan(
+                          children: [
+                            TextSpan(
+                              text:
+                                  '${FileHandler.formatFileSize(file.fileSize)}${ext.isNotEmpty ? ' • $ext' : ''}',
+                              style: const TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                                color: AppColors.textSecondary,
+                              ),
                             ),
-                          ),
-                          const TextSpan(text: '  '),
-                          TextSpan(
-                            text: statusText,
-                            style: TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w700,
-                              color: statusColor,
+                            const TextSpan(text: '  '),
+                            TextSpan(
+                              text: statusText,
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                                color: statusColor,
+                              ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
+                        maxLines: 1,
+                        softWrap: false,
                       ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
                     ),
                     if (isInProgress) ...[
                       const SizedBox(height: 6),
@@ -1384,10 +1398,12 @@ class _TransferScreenState extends State<TransferScreen> {
                     color: AppColors.primary,
                     size: 20,
                   ),
+                  constraints: const BoxConstraints(minWidth: 34, minHeight: 34),
+                  padding: const EdgeInsets.all(6),
                   visualDensity: VisualDensity.compact,
                   onPressed: () => _openFile(context, file, completedFiles),
                 ),
-                if (isGalleryCapable)
+                if (isGalleryCapable && MediaQuery.sizeOf(context).width >= 430)
                   IconButton(
                     tooltip: 'Open in default app',
                     icon: const Icon(
@@ -1395,6 +1411,9 @@ class _TransferScreenState extends State<TransferScreen> {
                       color: AppColors.textSecondary,
                       size: 18,
                     ),
+                    constraints:
+                        const BoxConstraints(minWidth: 34, minHeight: 34),
+                    padding: const EdgeInsets.all(6),
                     visualDensity: VisualDensity.compact,
                     onPressed: () => _openFile(
                       context,
@@ -1410,6 +1429,8 @@ class _TransferScreenState extends State<TransferScreen> {
                     color: AppColors.textSecondary,
                     size: 20,
                   ),
+                  constraints: const BoxConstraints(minWidth: 34, minHeight: 34),
+                  padding: const EdgeInsets.all(6),
                   visualDensity: VisualDensity.compact,
                   onPressed: () => _showInFolder(context, file),
                 ),

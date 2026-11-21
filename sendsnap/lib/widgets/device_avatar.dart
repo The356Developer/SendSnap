@@ -125,14 +125,14 @@ class DeviceAvatar extends StatelessWidget {
                   ],
                 ),
                 border: Border.all(
-                  color: Colors.white,
+                  color: const Color(0xFF1A1917),
                   width: 2.0,
                 ),
-                boxShadow: [
+                boxShadow: const [
                   BoxShadow(
-                    color: color.withValues(alpha: 0.35),
-                    blurRadius: 10,
-                    offset: const Offset(0, 4),
+                    color: Color(0xFF1A1917),
+                    blurRadius: 0,
+                    offset: Offset(2.5, 3.0),
                   ),
                 ],
               ),

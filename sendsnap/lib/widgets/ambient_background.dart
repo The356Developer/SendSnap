@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
+import '../config/constants.dart';
 
-/// Highly optimized ambient mesh background.
-/// Uses native hardware-accelerated radial gradients instead of heavy
-/// full-screen BackdropFilters, delivering 60-120 FPS with zero GPU jank.
+/// Style A — Clean Comic / Marker Sketchbook Background.
+/// Renders a warm sketchbook paper canvas (or charcoal slate in Dark Mode)
+/// with an architect dot-grid and soft flat marker wash accents.
+/// Zero GPU blur overhead, 120 FPS performance.
 class AmbientBackground extends StatelessWidget {
   final Widget child;
   final bool isDark;
@@ -15,88 +17,68 @@ class AmbientBackground extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final size = MediaQuery.of(context).size;
     final effectiveDark =
         isDark || Theme.of(context).brightness == Brightness.dark;
+    final paperColor =
+        effectiveDark ? const Color(0xFF14161C) : AppColors.background;
 
     return Stack(
       children: [
-        // Base canvas
         Positioned.fill(
-          child: Container(
-            color: effectiveDark ? const Color(0xFF0D0F14) : const Color(0xFFF7F9FD),
-          ),
-        ),
-
-        // Radiant Orb 1 (Top Left - Indigo glow)
-        Positioned(
-          top: -size.height * 0.12,
-          left: -size.width * 0.25,
-          child: IgnorePointer(
-            child: Container(
-              width: size.width * 1.1,
-              height: size.width * 1.1,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                gradient: RadialGradient(
-                  colors: [
-                    const Color(0xFF3D5AFE).withValues(alpha: effectiveDark ? 0.20 : 0.14),
-                    const Color(0xFF3D5AFE).withValues(alpha: 0.0),
-                  ],
-                  stops: const [0.0, 0.75],
-                ),
-              ),
+          child: ColoredBox(
+            color: paperColor,
+            child: CustomPaint(
+              painter: _SketchbookPaperPainter(isDark: effectiveDark),
             ),
           ),
         ),
-
-        // Radiant Orb 2 (Right Mid - Turquoise/Cyan glow)
-        Positioned(
-          top: size.height * 0.22,
-          right: -size.width * 0.35,
-          child: IgnorePointer(
-            child: Container(
-              width: size.width * 1.0,
-              height: size.width * 1.0,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                gradient: RadialGradient(
-                  colors: [
-                    const Color(0xFF00D2FF).withValues(alpha: effectiveDark ? 0.16 : 0.12),
-                    const Color(0xFF00D2FF).withValues(alpha: 0.0),
-                  ],
-                  stops: const [0.0, 0.75],
-                ),
-              ),
-            ),
-          ),
-        ),
-
-        // Radiant Orb 3 (Bottom Center - Soft Violet glow)
-        Positioned(
-          bottom: -size.height * 0.18,
-          left: size.width * 0.05,
-          child: IgnorePointer(
-            child: Container(
-              width: size.width * 1.1,
-              height: size.width * 1.1,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                gradient: RadialGradient(
-                  colors: [
-                    const Color(0xFF7C4DFF).withValues(alpha: effectiveDark ? 0.18 : 0.11),
-                    const Color(0xFF7C4DFF).withValues(alpha: 0.0),
-                  ],
-                  stops: const [0.0, 0.75],
-                ),
-              ),
-            ),
-          ),
-        ),
-
-        // Foreground content
         Positioned.fill(child: child),
       ],
     );
   }
+}
+
+class _SketchbookPaperPainter extends CustomPainter {
+  final bool isDark;
+
+  const _SketchbookPaperPainter({required this.isDark});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    // 1. Subtle flat marker highlight washes in corners
+    final topWashPaint = Paint()
+      ..color = AppColors.primary.withValues(alpha: isDark ? 0.08 : 0.05)
+      ..style = PaintingStyle.fill;
+    canvas.drawCircle(
+      Offset(size.width * 0.12, size.height * 0.08),
+      size.width * 0.36,
+      topWashPaint,
+    );
+
+    final bottomWashPaint = Paint()
+      ..color = AppColors.receivePrimary.withValues(alpha: isDark ? 0.07 : 0.05)
+      ..style = PaintingStyle.fill;
+    canvas.drawCircle(
+      Offset(size.width * 0.88, size.height * 0.85),
+      size.width * 0.34,
+      bottomWashPaint,
+    );
+
+    // 2. Architect sketchbook dot-grid
+    final dotPaint = Paint()
+      ..color = (isDark ? Colors.white : AppColors.ink)
+          .withValues(alpha: isDark ? 0.07 : 0.08)
+      ..style = PaintingStyle.fill;
+
+    const double step = 26.0;
+    for (double x = 14.0; x < size.width; x += step) {
+      for (double y = 14.0; y < size.height; y += step) {
+        canvas.drawCircle(Offset(x, y), 1.15, dotPaint);
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _SketchbookPaperPainter oldDelegate) =>
+      oldDelegate.isDark != isDark;
 }

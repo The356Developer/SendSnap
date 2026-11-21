@@ -1,7 +1,7 @@
 name: sendsnap
 description: "SendSnap - Fast Nearby File Share"
 publish_to: 'none'
-version: 2.2.6+12
+version: 2.2.7+13
 
 environment:
   sdk: ^3.11.1

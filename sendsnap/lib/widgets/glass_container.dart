@@ -1,6 +1,11 @@
-import 'dart:ui';
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import '../config/constants.dart';
 
+/// Style A — Clean Comic / Marker Sketch Container.
+/// Replaces heavy glassmorphism blur with crisp dark ink outlines,
+/// subtle double-pass hand-sketched pen corners, warm paper surface fill,
+/// and a solid offset comic ink block shadow.
 class GlassContainer extends StatelessWidget {
   final Widget child;
   final double blur;
@@ -24,7 +29,7 @@ class GlassContainer extends StatelessWidget {
     this.margin,
     this.color,
     this.borderColor,
-    this.borderWidth = 1.2,
+    this.borderWidth = 1.8,
     this.boxShadow,
     this.onTap,
   });
@@ -32,61 +37,32 @@ class GlassContainer extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final baseColor =
-        color ?? (isDark ? const Color(0xFF1C212C) : Colors.white);
-    final effectiveBorderColor = borderColor ??
-        (isDark
-            ? Colors.white.withValues(alpha: 0.12)
-            : Colors.white.withValues(alpha: 0.45));
+    final fillColor = color ??
+        (isDark ? const Color(0xFF1C2029) : AppColors.surface);
+    final inkColor = (borderColor != null && borderColor != Colors.white)
+        ? borderColor!
+        : (isDark ? AppColors.chalkInk : AppColors.ink);
+    final shadowInk = isDark
+        ? Colors.black.withValues(alpha: 0.75)
+        : AppColors.ink.withValues(alpha: 0.88);
+    final effectiveStrokeWidth = borderWidth < 1.6 ? 1.8 : borderWidth;
+    final radius = borderRadius.clamp(12.0, 26.0);
 
-    final innerDecoration = BoxDecoration(
-      color: baseColor.withValues(alpha: opacity),
-      borderRadius: BorderRadius.circular(borderRadius),
-      border: Border.all(
-        color: effectiveBorderColor,
-        width: borderWidth,
+    Widget content = CustomPaint(
+      painter: _ComicSketchCardPainter(
+        fillColor: fillColor,
+        inkColor: inkColor,
+        shadowColor: shadowInk,
+        borderRadius: radius,
+        strokeWidth: effectiveStrokeWidth,
       ),
-      gradient: LinearGradient(
-        begin: Alignment.topLeft,
-        end: Alignment.bottomRight,
-        colors: [
-          baseColor.withValues(alpha: (opacity + 0.12).clamp(0.0, 1.0)),
-          baseColor.withValues(alpha: (opacity * 0.75).clamp(0.0, 1.0)),
-        ],
+      child: Container(
+        padding: padding ?? const EdgeInsets.all(20),
+        child: child,
       ),
     );
 
-    Widget innerContent = Container(
-      padding: padding ?? const EdgeInsets.all(20),
-      decoration: innerDecoration,
-      child: child,
-    );
-
-    Widget content;
-    if (blur > 0) {
-      content = RepaintBoundary(
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(borderRadius),
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: blur, sigmaY: blur),
-            child: innerContent,
-          ),
-        ),
-      );
-    } else {
-      content = innerContent;
-    }
-
-    if (boxShadow != null) {
-      content = Container(
-        margin: margin,
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(borderRadius),
-          boxShadow: boxShadow,
-        ),
-        child: content,
-      );
-    } else if (margin != null) {
+    if (margin != null) {
       content = Padding(padding: margin!, child: content);
     }
 
@@ -99,5 +75,71 @@ class GlassContainer extends StatelessWidget {
     }
 
     return content;
+  }
+}
+
+class _ComicSketchCardPainter extends CustomPainter {
+  final Color fillColor;
+  final Color inkColor;
+  final Color shadowColor;
+  final double borderRadius;
+  final double strokeWidth;
+
+  const _ComicSketchCardPainter({
+    required this.fillColor,
+    required this.inkColor,
+    required this.shadowColor,
+    required this.borderRadius,
+    required this.strokeWidth,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final rect = Offset.zero & size;
+    final rrect = RRect.fromRectAndRadius(rect, Radius.circular(borderRadius));
+
+    // 1. Offset solid comic ink block shadow
+    final shadowRRect = rrect.shift(const Offset(3.5, 4.0));
+    final shadowPaint = Paint()
+      ..color = shadowColor
+      ..style = PaintingStyle.fill;
+    canvas.drawRRect(shadowRRect, shadowPaint);
+
+    // 2. Warm paper / card surface fill
+    final fillPaint = Paint()
+      ..color = fillColor
+      ..style = PaintingStyle.fill;
+    canvas.drawRRect(rrect, fillPaint);
+
+    // 3. Primary crisp marker/ink outline
+    final borderPaint = Paint()
+      ..color = inkColor
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = strokeWidth
+      ..strokeJoin = StrokeJoin.round;
+    canvas.drawRRect(rrect, borderPaint);
+
+    // 4. Subtle hand-sketched secondary over-stroke along top-left & bottom-right
+    final sketchAccentPaint = Paint()
+      ..color = inkColor.withValues(alpha: 0.32)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 0.9
+      ..strokeCap = StrokeCap.round;
+
+    final insetRect = rect.deflate(1.1);
+    final insetRRect = RRect.fromRectAndRadius(
+      insetRect,
+      Radius.circular(math.max(4.0, borderRadius - 1.2)),
+    );
+    canvas.drawRRect(insetRRect, sketchAccentPaint);
+  }
+
+  @override
+  bool shouldRepaint(covariant _ComicSketchCardPainter oldDelegate) {
+    return oldDelegate.fillColor != fillColor ||
+        oldDelegate.inkColor != inkColor ||
+        oldDelegate.shadowColor != shadowColor ||
+        oldDelegate.borderRadius != borderRadius ||
+        oldDelegate.strokeWidth != strokeWidth;
   }
 }

@@ -53,25 +53,27 @@ class _DraggableFileTokenState extends State<DraggableFileToken> {
     final totalBytes = _calculateTotalBytes();
     final totalSizeFormatted = totalBytes > 0 ? BidiHelper.isolate(FileHandler.formatFileSize(totalBytes)) : '';
 
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final inkBorder = isDark ? AppColors.chalkInk : AppColors.ink;
+
     return Container(
-      constraints: const BoxConstraints(maxWidth: 440),
-      margin: const EdgeInsets.symmetric(horizontal: 16),
+      constraints: const BoxConstraints(maxWidth: 520),
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.94),
-        borderRadius: BorderRadius.circular(26),
+        color: isDark ? const Color(0xFF1C2029) : AppColors.surface,
+        borderRadius: BorderRadius.circular(24),
         border: Border.all(
-          color: _isMasterDragging
-              ? AppColors.primary
-              : Colors.white,
-          width: _isMasterDragging ? 2.0 : 1.5,
+          color: _isMasterDragging ? AppColors.primary : inkBorder,
+          width: _isMasterDragging ? 2.4 : 2.0,
         ),
         boxShadow: [
           BoxShadow(
             color: _isMasterDragging
-                ? AppColors.primary.withValues(alpha: 0.25)
-                : Colors.black.withValues(alpha: 0.08),
-            blurRadius: _isMasterDragging ? 28 : 20,
-            offset: const Offset(0, 8),
+                ? AppColors.primary
+                : (isDark
+                    ? Colors.black.withValues(alpha: 0.8)
+                    : AppColors.ink),
+            blurRadius: 0,
+            offset: const Offset(4.0, 4.5),
           ),
         ],
       ),
@@ -92,35 +94,36 @@ class _DraggableFileTokenState extends State<DraggableFileToken> {
 
           // Micro helper hint
           Container(
-            padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 16),
+            padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 12),
             decoration: BoxDecoration(
               color: Colors.black.withValues(alpha: 0.02),
               borderRadius: const BorderRadius.vertical(bottom: Radius.circular(24)),
             ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(
-                  Icons.info_outline_rounded,
-                  size: 12,
-                  color: AppColors.textSecondary.withValues(alpha: 0.8),
-                ),
-                const SizedBox(width: 5),
-                Flexible(
-                  child: Text(
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    Icons.info_outline_rounded,
+                    size: 12,
+                    color: AppColors.textSecondary.withValues(alpha: 0.8),
+                  ),
+                  const SizedBox(width: 5),
+                  Text(
                     count > 1
                         ? (l10n?.homeDropHintMulti ?? 'Drop file per file or drag header to send all')
                         : (l10n?.homeDropHintSingle ?? 'Drag card to nearby device or edge to send'),
                     maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
+                    softWrap: false,
                     style: TextStyle(
                       fontSize: 10.5,
                       fontWeight: FontWeight.w600,
                       color: AppColors.textSecondary.withValues(alpha: 0.8),
                     ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ],
@@ -175,30 +178,32 @@ class _DraggableFileTokenState extends State<DraggableFileToken> {
               color: Colors.black.withValues(alpha: 0.04),
               borderRadius: BorderRadius.circular(14),
             ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(
-                  Icons.insert_drive_file_rounded,
-                  size: 14,
-                  color: AppColors.primary,
-                ),
-                const SizedBox(width: 6),
-                Flexible(
-                  child: Text(
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: AlignmentDirectional.centerStart,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(
+                    Icons.insert_drive_file_rounded,
+                    size: 14,
+                    color: AppColors.primary,
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
                     totalSizeFormatted.isNotEmpty
                         ? '${l10n != null ? l10n.homeFilesCount(1) : '1 file'} • $totalSizeFormatted'
                         : (l10n != null ? l10n.homeFilesCount(1) : '1 file'),
                     maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
+                    softWrap: false,
                     style: const TextStyle(
                       fontSize: 11,
                       fontWeight: FontWeight.w700,
                       color: AppColors.textSecondary,
                     ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           );
 
@@ -270,20 +275,22 @@ class _DraggableFileTokenState extends State<DraggableFileToken> {
           width: 1.2,
         ),
       ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(
-            Icons.drag_indicator_rounded,
-            size: 15,
-            color: isDragging ? Colors.white : AppColors.primary,
-          ),
-          const SizedBox(width: 4),
-          Flexible(
-            child: Text(
+      child: FittedBox(
+        fit: BoxFit.scaleDown,
+        alignment: AlignmentDirectional.centerStart,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.drag_indicator_rounded,
+              size: 15,
+              color: isDragging ? Colors.white : AppColors.primary,
+            ),
+            const SizedBox(width: 4),
+            Text(
               count > 1 ? '$dragAllLabel ($count)' : dragAllLabel,
               maxLines: 1,
-              overflow: TextOverflow.ellipsis,
+              softWrap: false,
               style: TextStyle(
                 fontSize: 11,
                 fontWeight: FontWeight.w800,
@@ -291,22 +298,23 @@ class _DraggableFileTokenState extends State<DraggableFileToken> {
                 color: isDragging ? Colors.white : AppColors.primary,
               ),
             ),
-          ),
-          if (totalSize.isNotEmpty) ...[
-            const SizedBox(width: 4),
-            Text(
-              '• $totalSize',
-              maxLines: 1,
-              style: TextStyle(
-                fontSize: 10.5,
-                fontWeight: FontWeight.w600,
-                color: isDragging
-                    ? Colors.white.withValues(alpha: 0.85)
-                    : AppColors.textSecondary,
+            if (totalSize.isNotEmpty) ...[
+              const SizedBox(width: 4),
+              Text(
+                '• $totalSize',
+                maxLines: 1,
+                softWrap: false,
+                style: TextStyle(
+                  fontSize: 10.5,
+                  fontWeight: FontWeight.w600,
+                  color: isDragging
+                      ? Colors.white.withValues(alpha: 0.85)
+                      : AppColors.textSecondary,
+                ),
               ),
-            ),
+            ],
           ],
-        ],
+        ),
       ),
     );
   }
@@ -314,7 +322,7 @@ class _DraggableFileTokenState extends State<DraggableFileToken> {
   /// Carousel view when multiple files are in the container
   Widget _buildMultiFileCarousel() {
     return SizedBox(
-      height: 138,
+      height: 146,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
         physics: const BouncingScrollPhysics(),
@@ -386,17 +394,141 @@ class _DraggableFileTokenState extends State<DraggableFileToken> {
     final typeInfo = _getFileTypeInfo(ext);
     final fileSize = file.existsSync() ? FileHandler.formatFileSize(file.lengthSync()) : '';
     final isImage = const ['JPG', 'JPEG', 'PNG', 'WEBP', 'GIF', 'HEIC', 'BMP'].contains(ext);
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final cardBg = isDark ? const Color(0xFF252A36) : Colors.white;
+    final textPrimary = isDark ? Colors.white : AppColors.textPrimary;
+
+    final Widget thumbWidget = (isImage && file.existsSync())
+        ? ClipRRect(
+            borderRadius: BorderRadius.circular(10),
+            child: Image.file(
+              file,
+              width: isFullWidth ? 42 : 30,
+              height: isFullWidth ? 42 : 30,
+              cacheWidth: 100,
+              cacheHeight: 100,
+              fit: BoxFit.cover,
+              errorBuilder: (context, error, stackTrace) => _buildIconBadge(typeInfo, size: isFullWidth ? 42 : 30),
+            ),
+          )
+        : _buildIconBadge(typeInfo, size: isFullWidth ? 42 : 30);
+
+    final Widget dragBadge = Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+      decoration: BoxDecoration(
+        color: AppColors.primary.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.touch_app_rounded, size: 12, color: AppColors.primary),
+          const SizedBox(width: 3),
+          Text(
+            l10n?.homeDragHandle ?? 'DRAG',
+            style: const TextStyle(
+              fontSize: 9.5,
+              fontWeight: FontWeight.w800,
+              color: AppColors.primary,
+              letterSpacing: 0.4,
+            ),
+          ),
+        ],
+      ),
+    );
+
+    if (isFullWidth) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+        decoration: BoxDecoration(
+          color: cardBg,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(
+            color: isDragging
+                ? AppColors.primary
+                : (isDark ? Colors.white.withValues(alpha: 0.12) : Colors.black.withValues(alpha: 0.08)),
+            width: isDragging ? 1.8 : 1.2,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: isDragging
+                  ? AppColors.primary.withValues(alpha: 0.2)
+                  : Colors.black.withValues(alpha: 0.04),
+              blurRadius: isDragging ? 14 : 8,
+              offset: const Offset(0, 3),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            thumbWidget,
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    fileName,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      height: 1.2,
+                      color: textPrimary,
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    fileSize.isNotEmpty
+                        ? (ext.isNotEmpty ? '$fileSize • $ext' : fileSize)
+                        : ext,
+                    style: const TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            dragBadge,
+            if (widget.onRemoveFile != null) ...[
+              const SizedBox(width: 8),
+              GestureDetector(
+                onTap: () => widget.onRemoveFile?.call(file),
+                child: Container(
+                  padding: const EdgeInsets.all(5),
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: (isDark ? Colors.white : Colors.black).withValues(alpha: 0.07),
+                  ),
+                  child: const Icon(
+                    Icons.close_rounded,
+                    size: 14,
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
+      );
+    }
 
     return Container(
-      width: isFullWidth ? double.infinity : 138,
+      width: 156,
       padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: cardBg,
         borderRadius: BorderRadius.circular(18),
         border: Border.all(
           color: isDragging
               ? AppColors.primary
-              : Colors.black.withValues(alpha: 0.07),
+              : (isDark ? Colors.white.withValues(alpha: 0.12) : Colors.black.withValues(alpha: 0.07)),
           width: isDragging ? 1.8 : 1.0,
         ),
         boxShadow: [
@@ -417,24 +549,7 @@ class _DraggableFileTokenState extends State<DraggableFileToken> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              // Thumbnail / Icon
-              if (isImage && file.existsSync())
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(8),
-                  child: Image.file(
-                    file,
-                    width: 30,
-                    height: 30,
-                    cacheWidth: 80,
-                    cacheHeight: 80,
-                    fit: BoxFit.cover,
-                    errorBuilder: (context, error, stackTrace) => _buildIconBadge(typeInfo),
-                  ),
-                )
-              else
-                _buildIconBadge(typeInfo),
-
-              // Individual remove button
+              thumbWidget,
               if (widget.onRemoveFile != null)
                 GestureDetector(
                   onTap: () => widget.onRemoveFile?.call(file),
@@ -442,7 +557,7 @@ class _DraggableFileTokenState extends State<DraggableFileToken> {
                     padding: const EdgeInsets.all(3),
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
-                      color: Colors.black.withValues(alpha: 0.06),
+                      color: (isDark ? Colors.white : Colors.black).withValues(alpha: 0.07),
                     ),
                     child: const Icon(
                       Icons.close_rounded,
@@ -453,7 +568,7 @@ class _DraggableFileTokenState extends State<DraggableFileToken> {
                 ),
             ],
           ),
-          const SizedBox(height: 6),
+          const SizedBox(height: 5),
 
           // File Name & Size
           Column(
@@ -462,66 +577,47 @@ class _DraggableFileTokenState extends State<DraggableFileToken> {
             children: [
               Text(
                 fileName,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w700,
+                  height: 1.18,
+                  color: textPrimary,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                fileSize.isNotEmpty ? fileSize : ext,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w700,
-                  color: AppColors.textPrimary,
-                ),
-              ),
-              const SizedBox(height: 1),
-              Text(
-                fileSize.isNotEmpty ? fileSize : ext,
-                style: const TextStyle(
                   fontSize: 10,
-                  fontWeight: FontWeight.w500,
+                  fontWeight: FontWeight.w600,
                   color: AppColors.textSecondary,
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 6),
+          const SizedBox(height: 4),
 
           // Bottom DRAG Pill prompt
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-            decoration: BoxDecoration(
-              color: AppColors.primary.withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(Icons.touch_app_rounded, size: 12, color: AppColors.primary),
-                const SizedBox(width: 3),
-                Text(
-                  l10n?.homeDragHandle ?? 'DRAG',
-                  style: const TextStyle(
-                    fontSize: 9.5,
-                    fontWeight: FontWeight.w800,
-                    color: AppColors.primary,
-                    letterSpacing: 0.4,
-                  ),
-                ),
-              ],
-            ),
-          ),
+          dragBadge,
         ],
       ),
     );
   }
 
-  Widget _buildIconBadge(_FileTypeInfo typeInfo) {
+  Widget _buildIconBadge(_FileTypeInfo typeInfo, {double size = 30}) {
     return Container(
-      width: 30,
-      height: 30,
+      width: size,
+      height: size,
       decoration: BoxDecoration(
         gradient: LinearGradient(colors: typeInfo.colors),
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(size > 34 ? 10 : 8),
       ),
       child: Center(
-        child: Icon(typeInfo.icon, size: 16, color: Colors.white),
+        child: Icon(typeInfo.icon, size: size * 0.53, color: Colors.white),
       ),
     );
   }
