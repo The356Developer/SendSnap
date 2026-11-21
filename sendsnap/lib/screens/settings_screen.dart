@@ -575,7 +575,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           const SizedBox(height: 28),
                           const Center(
                             child: Text(
-                              'SendSnap v2.2.7',
+                              'SendSnap v2.2.8',
                               style: TextStyle(
                                 color: AppColors.textSecondary,
                                 fontSize: 13,
