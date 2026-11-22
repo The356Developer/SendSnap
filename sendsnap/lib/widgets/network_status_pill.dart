@@ -57,9 +57,7 @@ class _NetworkStatusPillState extends State<NetworkStatusPill>
 
   @override
   Widget build(BuildContext context) {
-    final hasLan = widget.devProv.hasLanIp;
-    final hasDirect = widget.devProv.hasDirectWifiReady;
-    final isReady = hasLan || hasDirect;
+    final isReady = widget.devProv.hasLanIp;
     final dotColor = isReady ? AppColors.success : AppColors.warning;
 
     return BouncingCard(

@@ -16,6 +16,8 @@ class DraggableFileToken extends StatefulWidget {
   final VoidCallback? onAddMore;
   final void Function(File file)? onRemoveFile;
   final void Function(Offset globalPosition, {String? fileName})? onDragUpdate;
+  final bool isAirGrabbed;
+  final bool isHandDetected;
 
   const DraggableFileToken({
     super.key,
@@ -24,6 +26,8 @@ class DraggableFileToken extends StatefulWidget {
     this.onAddMore,
     this.onRemoveFile,
     this.onDragUpdate,
+    this.isAirGrabbed = false,
+    this.isHandDetected = false,
   });
 
   @override
@@ -55,78 +59,129 @@ class _DraggableFileTokenState extends State<DraggableFileToken> {
 
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final inkBorder = isDark ? AppColors.chalkInk : AppColors.ink;
+    final bool isGrabbed = widget.isAirGrabbed;
+    final bool isTracked = widget.isHandDetected && !isGrabbed;
 
-    return Container(
-      constraints: const BoxConstraints(maxWidth: 520),
-      decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF1C2029) : AppColors.surface,
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(
-          color: _isMasterDragging ? AppColors.primary : inkBorder,
-          width: _isMasterDragging ? 2.4 : 2.0,
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: _isMasterDragging
-                ? AppColors.primary
-                : (isDark
-                    ? Colors.black.withValues(alpha: 0.8)
-                    : AppColors.ink),
-            blurRadius: 0,
-            offset: const Offset(4.0, 4.5),
+    final Color borderColor = isGrabbed
+        ? AppColors.secondary
+        : (isTracked
+            ? AppColors.secondary.withValues(alpha: 0.78)
+            : (_isMasterDragging ? AppColors.primary : inkBorder));
+    final double borderWidth = isGrabbed ? 2.8 : (_isMasterDragging ? 2.4 : 2.0);
+
+    return AnimatedScale(
+      scale: isGrabbed ? 0.92 : 1.0,
+      duration: const Duration(milliseconds: 260),
+      curve: Curves.easeOutBack,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 240),
+        curve: Curves.easeOutCubic,
+        constraints: const BoxConstraints(maxWidth: 520),
+        decoration: BoxDecoration(
+          color: isDark ? const Color(0xFF1C2029) : AppColors.surface,
+          borderRadius: BorderRadius.circular(24),
+          border: Border.all(
+            color: borderColor,
+            width: borderWidth,
           ),
-        ],
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          // Container Top Bar: Draggable Header ("DRAG ALL" master handle + actions)
-          _buildMasterHeader(count, totalSizeFormatted, l10n),
-
-          // Cards Row / Grid
-          Padding(
-            padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
-            child: count == 1
-                ? _buildSingleFileRow(widget.files.first)
-                : _buildMultiFileCarousel(),
-          ),
-
-          // Micro helper hint
-          Container(
-            padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 12),
-            decoration: BoxDecoration(
-              color: AppColors.subtleFillOf(context),
-              borderRadius: const BorderRadius.vertical(bottom: Radius.circular(22)),
+          boxShadow: [
+            if (isGrabbed) ...[
+              BoxShadow(
+                color: AppColors.secondary.withValues(alpha: 0.55),
+                blurRadius: 24,
+                spreadRadius: 2,
+              ),
+              BoxShadow(
+                color: AppColors.primary.withValues(alpha: 0.40),
+                blurRadius: 36,
+                spreadRadius: 4,
+              ),
+            ] else if (isTracked)
+              BoxShadow(
+                color: AppColors.secondary.withValues(alpha: 0.28),
+                blurRadius: 14,
+                spreadRadius: 1,
+              ),
+            BoxShadow(
+              color: isGrabbed
+                  ? AppColors.secondary
+                  : (_isMasterDragging
+                      ? AppColors.primary
+                      : (isDark
+                          ? Colors.black.withValues(alpha: 0.8)
+                          : AppColors.ink)),
+              blurRadius: 0,
+              offset: const Offset(4.0, 4.5),
             ),
-            child: FittedBox(
-              fit: BoxFit.scaleDown,
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(
-                    Icons.info_outline_rounded,
-                    size: 12,
-                    color: AppColors.textSecondaryOf(context).withValues(alpha: 0.9),
-                  ),
-                  const SizedBox(width: 5),
-                  Text(
-                    count > 1
-                        ? (l10n?.homeDropHintMulti ?? 'Drop file per file or drag header to send all')
-                        : (l10n?.homeDropHintSingle ?? 'Drag card to nearby device or edge to send'),
-                    maxLines: 1,
-                    softWrap: false,
-                    style: TextStyle(
-                      fontSize: 10.5,
-                      fontWeight: FontWeight.w600,
-                      color: AppColors.textSecondaryOf(context).withValues(alpha: 0.9),
+          ],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // Container Top Bar: Draggable Header ("DRAG ALL" master handle + actions)
+            _buildMasterHeader(count, totalSizeFormatted, l10n),
+
+            // Cards Row / Grid
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
+              child: count == 1
+                  ? _buildSingleFileRow(widget.files.first)
+                  : _buildMultiFileCarousel(),
+            ),
+
+            // Micro helper hint
+            Container(
+              padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 12),
+              decoration: BoxDecoration(
+                color: isGrabbed
+                    ? AppColors.secondary.withValues(alpha: 0.14)
+                    : AppColors.subtleFillOf(context),
+                borderRadius: const BorderRadius.vertical(bottom: Radius.circular(22)),
+              ),
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      isGrabbed
+                          ? Icons.auto_awesome_rounded
+                          : (isTracked
+                              ? Icons.pan_tool_alt_rounded
+                              : Icons.info_outline_rounded),
+                      size: 12,
+                      color: (isGrabbed || isTracked)
+                          ? AppColors.secondary
+                          : AppColors.textSecondaryOf(context).withValues(alpha: 0.9),
                     ),
-                  ),
-                ],
+                    const SizedBox(width: 5),
+                    Text(
+                      isGrabbed
+                          ? '✨ Grabbed! Move to the other device and open your hand to drop'
+                          : (isTracked
+                              ? '✋ Hand detected — close fingers to grab'
+                              : (count > 1
+                                  ? (l10n?.homeDropHintMulti ?? 'Drop file per file or drag header to send all')
+                                  : (l10n?.homeDropHintSingle ?? 'Drag card to nearby device or edge to send'))),
+                      maxLines: 1,
+                      softWrap: false,
+                      style: TextStyle(
+                        fontSize: 10.5,
+                        fontWeight: (isGrabbed || isTracked)
+                            ? FontWeight.w700
+                            : FontWeight.w600,
+                        color: (isGrabbed || isTracked)
+                            ? AppColors.secondary
+                            : AppColors.textSecondaryOf(context).withValues(alpha: 0.9),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

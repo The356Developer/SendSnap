@@ -69,12 +69,16 @@ class WifiDirectManager(private val context: Context) {
     private var lastNotifiedWifiState: Boolean? = null
     private var dnsSdListenersRegistered = false
     private var advertisingGen = 0
+    private val bleDiscovery = BleDiscoveryManager(context)
+    private var activeDeviceId: String = ""
+    private var activeDeviceName: String = "SendSnap Device"
 
     // Active Receiver Group / Hotspot credentials
     private var activeSsid: String? = null
     private var activePassphrase: String? = null
     private var activeGoIp: String? = null
     private var activePort: Int = 53318
+    private var activeAirToken: String? = null
     private var activeHotspotReservation: WifiManager.LocalOnlyHotspotReservation? = null
 
     // Active Sender Connection state
@@ -222,6 +226,11 @@ class WifiDirectManager(private val context: Context) {
             null
         }
         registerP2pReceiver()
+        bleDiscovery.onPeerFound = { peerMap ->
+            mainHandler.post {
+                onPeerFound?.invoke(peerMap)
+            }
+        }
     }
 
     private fun registerP2pReceiver() {
@@ -294,6 +303,8 @@ class WifiDirectManager(private val context: Context) {
             "wifiEnabled" to isWifiEnabled(),
             "hasPermission" to hasP2pPermission(),
             "locationEnabled" to isLocationReady(),
+            "bluetoothEnabled" to bleDiscovery.isBluetoothEnabled(),
+            "hasBlePermission" to (bleDiscovery.hasScanPermission() && bleDiscovery.hasAdvertisePermission()),
             "isGroupActive" to (activeSsid != null && activePassphrase != null),
             "ssid" to (activeSsid ?: ""),
             "passphrase" to (activePassphrase ?: ""),
@@ -327,6 +338,27 @@ class WifiDirectManager(private val context: Context) {
         }
     }
 
+    fun openHotspotSettings(activity: Activity?): Boolean {
+        if (activity == null) return false
+        val candidates = listOf(
+            Intent().setClassName("com.android.settings", "com.android.settings.TetherSettings"),
+            Intent("android.settings.TETHER_SETTINGS"),
+            Intent(Settings.ACTION_WIRELESS_SETTINGS),
+            Intent(Settings.ACTION_WIFI_SETTINGS)
+        )
+        for (intent in candidates) {
+            try {
+                if (intent.resolveActivity(activity.packageManager) != null) {
+                    activity.startActivity(intent)
+                    return true
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "openHotspotSettings candidate failed (${intent.action ?: intent.component}): ${e.message}")
+            }
+        }
+        return false
+    }
+
     // -------------------------------------------------------------------------
     // Receiver Advertising (Autonomous Group Owner + DNS-SD + LOHS Fallback)
     // -------------------------------------------------------------------------
@@ -336,12 +368,17 @@ class WifiDirectManager(private val context: Context) {
         deviceId: String,
         deviceName: String,
         port: Int,
+        airToken: String? = null,
         onResult: (Boolean, String?) -> Unit
     ) {
         if (!hasP2pPermission()) {
             onResult(false, "Nearby Wi-Fi permission not granted")
             return
         }
+
+        activeDeviceId = deviceId
+        activeDeviceName = deviceName
+        activeAirToken = airToken?.takeIf { it.isNotBlank() }
 
         // Android 8+ LocalOnlyHotspot works directly even when the master Wi-Fi toggle is OFF
         if (!isWifiEnabled()) {
@@ -362,7 +399,7 @@ class WifiDirectManager(private val context: Context) {
                 wifiManager?.setWifiEnabled(true)
                 mainHandler.postDelayed({
                     if (isWifiEnabled()) {
-                        startAdvertising(deviceId, deviceName, port, onResult)
+                        startAdvertising(deviceId, deviceName, port, airToken, onResult)
                     } else {
                         onResult(false, "Could not enable Wi-Fi")
                     }
@@ -395,7 +432,7 @@ class WifiDirectManager(private val context: Context) {
         activeGoIp = null
 
         val customSsid = "DIRECT-S5-Snap${randomAlphanum(4)}"
-        val customPass = randomAlphanum(12)
+        val customPass = randomAlphanum(8)
 
         manager.clearLocalServices(channel, object : WifiP2pManager.ActionListener {
             override fun onSuccess() {
@@ -569,9 +606,10 @@ class WifiDirectManager(private val context: Context) {
         mainHandler.post {
             onHotspotReady?.invoke(hotspotMap)
         }
+        bleDiscovery.startAdvertising(deviceId, deviceName, port, ssid, pass, goIp)
 
         // Register compact DNS-SD TXT service so nearby senders discover SSID/pass automatically
-        val txtRecord = mapOf(
+        val txtRecord = mutableMapOf(
             "id" to deviceId,
             "n" to deviceName.take(32),
             "p" to port.toString(),
@@ -580,6 +618,9 @@ class WifiDirectManager(private val context: Context) {
             "k" to pass,
             "g" to goIp
         )
+        activeAirToken?.takeIf { it.isNotEmpty() }?.let { token ->
+            txtRecord["air"] = token
+        }
         val serviceInfo = WifiP2pDnsSdServiceInfo.newInstance(
             SERVICE_INSTANCE,
             SERVICE_TYPE,
@@ -682,6 +723,14 @@ class WifiDirectManager(private val context: Context) {
                             "port" to port
                         )
                         onHotspotReady?.invoke(hotspotMap)
+                        bleDiscovery.startAdvertising(
+                            activeDeviceId,
+                            activeDeviceName,
+                            port,
+                            ssid,
+                            pass,
+                            goIp
+                        )
                         onResult(true, null)
                     }, 300L)
                 }
@@ -724,10 +773,12 @@ class WifiDirectManager(private val context: Context) {
     fun stopAdvertising() {
         advertisingGen++
         isAdvertising = false
+        bleDiscovery.stopAdvertising()
         mainHandler.removeCallbacks(advertiseKeepAliveRunnable)
         activeSsid = null
         activePassphrase = null
         activeGoIp = null
+        activeAirToken = null
         closeHotspotReservation()
         mainHandler.post {
             onHotspotReady?.invoke(emptyMap())
@@ -763,13 +814,16 @@ class WifiDirectManager(private val context: Context) {
     fun startDiscovery(isPassive: Boolean): Boolean {
         wantsDiscovery = true
         isPassiveDiscovery = isPassive
+        if (isAdvertising) return false
+        if (connectedSsid != null) return true
+
+        bleDiscovery.startScanning(isPassive)
+
         if (!isWifiEnabled() || !hasP2pPermission() || !isLocationReady()) {
             return false
         }
         val manager = p2pManager ?: return false
         val channel = p2pChannel ?: return false
-        if (isAdvertising) return false
-        if (connectedSsid != null) return true
 
         if (isDiscovering) {
             setDiscoveryPace(isPassive)
@@ -830,6 +884,7 @@ class WifiDirectManager(private val context: Context) {
                 val ssid = record["s"] ?: ""
                 val passphrase = record["k"] ?: ""
                 val goIp = record["g"] ?: DEFAULT_GO_IP
+                val airToken = record["air"] ?: ""
 
                 val peerMap = mapOf<String, Any>(
                     "id" to id,
@@ -839,7 +894,8 @@ class WifiDirectManager(private val context: Context) {
                     "p2pDeviceAddress" to (srcDevice.deviceAddress ?: ""),
                     "p2pSsid" to ssid,
                     "p2pPassphrase" to passphrase,
-                    "p2pGoIp" to goIp
+                    "p2pGoIp" to goIp,
+                    "airToken" to airToken
                 )
                 mainHandler.post {
                     onPeerFound?.invoke(peerMap)
@@ -889,6 +945,7 @@ class WifiDirectManager(private val context: Context) {
     fun setDiscoveryPace(isPassive: Boolean) {
         val wasPassive = isPassiveDiscovery
         isPassiveDiscovery = isPassive
+        bleDiscovery.setScanPace(isPassive)
         if (isDiscovering && wasPassive && !isPassive && !isConnecting && isWifiEnabled()) {
             mainHandler.removeCallbacks(discoveryRefreshRunnable)
             mainHandler.removeCallbacks(busyRetryRunnable)
@@ -906,6 +963,7 @@ class WifiDirectManager(private val context: Context) {
         isDiscovering = false
         isDiscoveryCallInFlight = false
         consecutiveBusyCount = 0
+        bleDiscovery.stopScanning()
         mainHandler.removeCallbacks(discoveryRefreshRunnable)
         mainHandler.removeCallbacks(busyRetryRunnable)
         mainHandler.removeCallbacks(reAddServiceRequestRunnable)
@@ -1270,6 +1328,7 @@ class WifiDirectManager(private val context: Context) {
         stopDiscovery()
         stopAdvertising()
         disconnectDirect()
+        bleDiscovery.dispose()
         if (receiverRegistered) {
             try {
                 context.applicationContext.unregisterReceiver(p2pReceiver)

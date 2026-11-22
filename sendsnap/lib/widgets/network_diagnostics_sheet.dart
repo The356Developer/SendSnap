@@ -38,8 +38,7 @@ class NetworkDiagnosticsSheet extends StatelessWidget {
       builder: (context, _) {
         final ip = devProv.localIp;
         final hasLan = devProv.hasLanIp;
-        final hasDirect = devProv.hasDirectWifiReady;
-        final isReady = hasLan || hasDirect;
+        final isReady = hasLan;
         final maxHeight = MediaQuery.of(context).size.height * 0.82;
 
         return BackdropFilter(
@@ -123,7 +122,7 @@ class NetworkDiagnosticsSheet extends StatelessWidget {
                                 Text(
                                   isReady
                                       ? 'Your device is ready to share files'
-                                      : 'Turn on Wi-Fi to start sharing',
+                                      : 'Connect both devices to the same Wi-Fi or Personal Hotspot',
                                   style: TextStyle(
                                     fontSize: 12,
                                     color: textSecondary,
@@ -184,10 +183,13 @@ class NetworkDiagnosticsSheet extends StatelessWidget {
                                       ),
                                       const SizedBox(width: 8),
                                       Text(
-                                        isReady
+                                        hasLan
                                             ? (l10n?.homeWifiConnected ??
                                                 'Wi-Fi Connected')
-                                            : 'Wi-Fi is Turned Off',
+                                            : (devProv.isWifiEnabled
+                                                ? (l10n?.homeWifiDisconnected ??
+                                                    'No Wi-Fi')
+                                                : 'Wi-Fi is Turned Off'),
                                         style: TextStyle(
                                           fontSize: 14,
                                           fontWeight: FontWeight.w700,
@@ -245,61 +247,19 @@ class NetworkDiagnosticsSheet extends StatelessWidget {
                                     ),
                                 ],
                               ),
-                              if (Platform.isAndroid && !devProv.isWifiEnabled) ...[
+                              if (Platform.isAndroid || Platform.isWindows) ...[
                                 const SizedBox(height: 14),
-                                BouncingCard(
-                                  onTap: () async {
-                                    await devProv.openWifiSettings();
-                                    await Future.delayed(
-                                      const Duration(milliseconds: 600),
-                                    );
-                                    await devProv.refreshNetworkStatus(
-                                      forceRefresh: true,
-                                    );
-                                  },
-                                  child: Container(
-                                    height: 46,
-                                    decoration: BoxDecoration(
-                                      color: AppColors.warning
-                                          .withValues(alpha: 0.16),
-                                      borderRadius: BorderRadius.circular(14),
-                                      border: Border.all(
-                                        color: AppColors.warning
-                                            .withValues(alpha: 0.45),
-                                      ),
-                                    ),
-                                    child: const Row(
-                                      mainAxisAlignment:
-                                          MainAxisAlignment.center,
-                                      children: [
-                                        Icon(
-                                          Icons.build_circle_rounded,
-                                          size: 18,
-                                          color: AppColors.warning,
-                                        ),
-                                        SizedBox(width: 8),
-                                        Text(
-                                          'Fix: Turn On Wi-Fi',
-                                          style: TextStyle(
-                                            fontSize: 13,
-                                            fontWeight: FontWeight.w800,
-                                            color: AppColors.warning,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ),
+                                _buildQuickActionsRow(isDark, textPrimary),
                               ],
                             ],
                           ),
                         ),
                         const SizedBox(height: 18),
                         _buildStepItem(
-                          icon: Icons.wifi_rounded,
-                          title: '1. Turn on Wi-Fi on both devices',
+                          icon: Icons.wifi_tethering_rounded,
+                          title: '1. Connect via Wi-Fi or Personal Hotspot',
                           description:
-                              'No internet or mobile data needed — Wi-Fi lets nearby devices find each other.',
+                              'Use the same Wi-Fi network, or turn on Personal Hotspot on one phone and connect the other phone\'s Wi-Fi to it.',
                           isDark: isDark,
                           textPrimary: textPrimary,
                           textSecondary: textSecondary,
@@ -307,9 +267,9 @@ class NetworkDiagnosticsSheet extends StatelessWidget {
                         const SizedBox(height: 10),
                         _buildStepItem(
                           icon: Icons.swap_horiz_rounded,
-                          title: '2. Tap Send & Receive',
+                          title: '2. Open Send & Receive',
                           description:
-                              'Open SendSnap on both devices: tap Send on one and Receive on the other.',
+                              'Tap Receive on one device and Send on the other — they will link automatically once on the same Hotspot or Wi-Fi.',
                           isDark: isDark,
                           textPrimary: textPrimary,
                           textSecondary: textSecondary,
@@ -317,9 +277,9 @@ class NetworkDiagnosticsSheet extends StatelessWidget {
                         const SizedBox(height: 10),
                         _buildStepItem(
                           icon: Icons.qr_code_scanner_rounded,
-                          title: '3. Or scan the QR code',
+                          title: '3. Or connect with QR / IP',
                           description:
-                              'Tap QR Code on the receiver and scan it from the sender for instant pairing.',
+                              'Tap QR Code on the receiver and scan it from the sender, or enter the receiver IP manually.',
                           isDark: isDark,
                           textPrimary: textPrimary,
                           textSecondary: textSecondary,
@@ -354,6 +314,92 @@ class NetworkDiagnosticsSheet extends StatelessWidget {
           ),
         );
       },
+    );
+  }
+
+  Future<void> _launchSettings({required bool hotspot}) async {
+    HapticFeedback.selectionClick();
+    if (hotspot) {
+      await devProv.openHotspotSettings();
+    } else {
+      await devProv.openWifiSettings();
+    }
+    await Future.delayed(const Duration(milliseconds: 600));
+    await devProv.refreshNetworkStatus(forceRefresh: true);
+  }
+
+  Widget _buildQuickActionsRow(bool isDark, Color textPrimary) {
+    Widget buildButton({
+      required IconData icon,
+      required String label,
+      required bool isPrimary,
+      required VoidCallback onTap,
+    }) {
+      return Expanded(
+        child: BouncingCard(
+          onTap: onTap,
+          child: Container(
+            height: 44,
+            padding: const EdgeInsets.symmetric(horizontal: 10),
+            decoration: BoxDecoration(
+              color: isPrimary
+                  ? AppColors.warning
+                  : (isDark
+                      ? Colors.white.withValues(alpha: 0.09)
+                      : Colors.black.withValues(alpha: 0.05)),
+              borderRadius: BorderRadius.circular(13),
+              border: isPrimary
+                  ? null
+                  : Border.all(
+                      color: (isDark ? Colors.white : Colors.black)
+                          .withValues(alpha: 0.12),
+                    ),
+            ),
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    icon,
+                    size: 17,
+                    color: isPrimary ? Colors.black : textPrimary,
+                  ),
+                  const SizedBox(width: 7),
+                  Text(
+                    label,
+                    maxLines: 1,
+                    softWrap: false,
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w800,
+                      color: isPrimary ? Colors.black : textPrimary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Row(
+      children: [
+        buildButton(
+          icon: Icons.wifi_tethering_rounded,
+          label: 'Open Hotspot',
+          isPrimary: true,
+          onTap: () => _launchSettings(hotspot: true),
+        ),
+        const SizedBox(width: 10),
+        buildButton(
+          icon: Icons.wifi_rounded,
+          label: 'Open Wi-Fi',
+          isPrimary: false,
+          onTap: () => _launchSettings(hotspot: false),
+        ),
+      ],
     );
   }
 

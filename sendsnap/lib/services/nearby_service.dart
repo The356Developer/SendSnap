@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
+import '../models/air_session.dart';
 import '../models/device.dart';
 import '../models/transfer.dart';
 import 'network_info_service.dart';
@@ -34,6 +35,11 @@ class NearbyService {
   Function(String)? onDisconnected;
   Function(DirectHotspotInfo?)? onHotspotInfoChanged;
   Function(bool)? onWifiStateChanged;
+  Function(AirGrabSession)? onAirGrabReceived;
+  Function(String token)? onAirCancelReceived;
+  Function(String token, NearbyDevice claimer)? onAirClaimReceived;
+  Function(NearbyDevice sender, String airToken)? onAirWifiDirectSenderFound;
+  AirGrabSession? Function()? onAirActiveRequested;
 
   // Callbacks for TransferProvider
   Function(NearbyDevice sender, FileTransfer transfer)? onIncomingTransfer;
@@ -83,6 +89,22 @@ class NearbyService {
         onDeviceLost?.call(deviceId);
       }
     };
+
+    _discoveryService.onAirGrabReceived = (session) {
+      if (session.sender.id == _deviceId) return;
+      _mergeDiscoveredDevice(session.sender);
+      onAirGrabReceived?.call(session);
+    };
+
+    _discoveryService.onAirCancelReceived = (token) {
+      onAirCancelReceived?.call(token);
+    };
+
+    _discoveryService.onAirClaimReceived = (token, claimer) {
+      if (claimer.id == _deviceId) return;
+      _mergeDiscoveredDevice(claimer);
+      onAirClaimReceived?.call(token, claimer);
+    };
   }
 
   void _setupDirectP2pCallbacks() {
@@ -113,6 +135,11 @@ class NearbyService {
       _mergeDiscoveredDevice(device);
     };
 
+    _directP2p.onAirWifiDirectSenderFound = (sender, airToken) {
+      if (sender.id == _deviceId) return;
+      onAirWifiDirectSenderFound?.call(sender, airToken);
+    };
+
     _directP2p.onDirectHotspotReady = (hotspot) {
       _activeHotspotInfo = hotspot;
       onHotspotInfoChanged?.call(hotspot);
@@ -127,51 +154,123 @@ class NearbyService {
     };
   }
 
+  String _hexPrefix12(String? id) {
+    if (id == null || id.isEmpty) return '';
+    final stripped = (id.startsWith('ble-') ? id.substring(4) : id)
+        .replaceAll('-', '')
+        .toLowerCase();
+    final hexOnly = stripped.replaceAll(RegExp(r'[^0-9a-f]'), '');
+    if (hexOnly.isEmpty) return '';
+    final trimmed = hexOnly.length > 12 ? hexOnly.substring(0, 12) : hexOnly;
+    return trimmed.padRight(12, '0');
+  }
+
   void _mergeDiscoveredDevice(NearbyDevice incoming) {
     if (incoming.id.isEmpty || incoming.id == _deviceId) return;
 
-    final existing = _knownDevices[incoming.id];
+    var resolvedIncoming = incoming;
+    final prefix12 = _hexPrefix12(resolvedIncoming.id);
+
+    if (resolvedIncoming.id.startsWith('ble-')) {
+      final localPrefix12 = _hexPrefix12(_deviceId);
+      if (prefix12.isNotEmpty && prefix12 == localPrefix12) {
+        return;
+      }
+      if (prefix12.isNotEmpty) {
+        for (final key in _knownDevices.keys) {
+          if (!key.startsWith('ble-') && _hexPrefix12(key) == prefix12) {
+            resolvedIncoming = resolvedIncoming.copyWith(id: key);
+            break;
+          }
+        }
+      }
+    }
+
+    NearbyDevice? removedBleFallback;
+    if (!resolvedIncoming.id.startsWith('ble-') && prefix12.isNotEmpty) {
+      final bleKey = 'ble-$prefix12';
+      if (_knownDevices.containsKey(bleKey)) {
+        removedBleFallback = _knownDevices.remove(bleKey);
+        onDeviceLost?.call(bleKey);
+      }
+    }
+
+    final existing = _knownDevices[resolvedIncoming.id] ?? removedBleFallback;
     late NearbyDevice merged;
 
+    final incomingHasRealName = resolvedIncoming.name != 'Unknown' &&
+        resolvedIncoming.name != 'SendSnap Device';
+
     if (existing == null) {
-      merged = incoming.copyWith(lastSeen: DateTime.now());
-    } else if (incoming.connectionType == 'lan' && incoming.hasLanIp) {
+      merged = resolvedIncoming.copyWith(lastSeen: DateTime.now());
+    } else if (resolvedIncoming.connectionType == 'lan' &&
+        resolvedIncoming.hasLanIp) {
       // LAN / NSD / Sweep takes priority over Wi-Fi Direct while preserving P2P fallback info
-      merged = incoming.copyWith(
-        name: incoming.name != 'Unknown' ? incoming.name : existing.name,
-        deviceType: incoming.deviceType != 'unknown'
-            ? incoming.deviceType
+      merged = resolvedIncoming.copyWith(
+        name: incomingHasRealName || existing.name == 'Unknown'
+            ? resolvedIncoming.name
+            : existing.name,
+        deviceType: resolvedIncoming.deviceType != 'unknown'
+            ? resolvedIncoming.deviceType
             : existing.deviceType,
         connectionType: 'lan',
-        p2pDeviceAddress: incoming.p2pDeviceAddress ?? existing.p2pDeviceAddress,
-        p2pSsid: incoming.p2pSsid ?? existing.p2pSsid,
-        p2pPassphrase: incoming.p2pPassphrase ?? existing.p2pPassphrase,
-        p2pGoIp: incoming.p2pGoIp ?? existing.p2pGoIp,
+        p2pDeviceAddress:
+            resolvedIncoming.p2pDeviceAddress ?? existing.p2pDeviceAddress,
+        p2pSsid: resolvedIncoming.p2pSsid?.isNotEmpty == true
+            ? resolvedIncoming.p2pSsid
+            : existing.p2pSsid,
+        p2pPassphrase: resolvedIncoming.p2pPassphrase?.isNotEmpty == true
+            ? resolvedIncoming.p2pPassphrase
+            : existing.p2pPassphrase,
+        p2pGoIp: resolvedIncoming.p2pGoIp?.isNotEmpty == true
+            ? resolvedIncoming.p2pGoIp
+            : existing.p2pGoIp,
         lastSeen: DateTime.now(),
       );
-    } else if (incoming.isWifiDirect) {
+    } else if (resolvedIncoming.isWifiDirect) {
       final recentLan = existing.connectionType == 'lan' &&
           existing.hasLanIp &&
           DateTime.now().difference(existing.lastSeen).inSeconds < 12;
       if (recentLan) {
         merged = existing.copyWith(
-          p2pDeviceAddress: incoming.p2pDeviceAddress ?? existing.p2pDeviceAddress,
-          p2pSsid: incoming.p2pSsid ?? existing.p2pSsid,
-          p2pPassphrase: incoming.p2pPassphrase ?? existing.p2pPassphrase,
-          p2pGoIp: incoming.p2pGoIp ?? existing.p2pGoIp,
+          name: incomingHasRealName ? resolvedIncoming.name : existing.name,
+          p2pDeviceAddress:
+              resolvedIncoming.p2pDeviceAddress ?? existing.p2pDeviceAddress,
+          p2pSsid: resolvedIncoming.p2pSsid?.isNotEmpty == true
+              ? resolvedIncoming.p2pSsid
+              : existing.p2pSsid,
+          p2pPassphrase: resolvedIncoming.p2pPassphrase?.isNotEmpty == true
+              ? resolvedIncoming.p2pPassphrase
+              : existing.p2pPassphrase,
+          p2pGoIp: resolvedIncoming.p2pGoIp?.isNotEmpty == true
+              ? resolvedIncoming.p2pGoIp
+              : existing.p2pGoIp,
           lastSeen: DateTime.now(),
         );
       } else {
-        merged = incoming.copyWith(
-          name: incoming.name != 'Unknown' ? incoming.name : existing.name,
-          deviceType: incoming.deviceType != 'unknown'
-              ? incoming.deviceType
+        merged = resolvedIncoming.copyWith(
+          name: incomingHasRealName || existing.name == 'Unknown'
+              ? resolvedIncoming.name
+              : existing.name,
+          deviceType: resolvedIncoming.deviceType != 'unknown'
+              ? resolvedIncoming.deviceType
               : existing.deviceType,
+          p2pDeviceAddress:
+              resolvedIncoming.p2pDeviceAddress ?? existing.p2pDeviceAddress,
+          p2pSsid: resolvedIncoming.p2pSsid?.isNotEmpty == true
+              ? resolvedIncoming.p2pSsid
+              : existing.p2pSsid,
+          p2pPassphrase: resolvedIncoming.p2pPassphrase?.isNotEmpty == true
+              ? resolvedIncoming.p2pPassphrase
+              : existing.p2pPassphrase,
+          p2pGoIp: resolvedIncoming.p2pGoIp?.isNotEmpty == true
+              ? resolvedIncoming.p2pGoIp
+              : existing.p2pGoIp,
           lastSeen: DateTime.now(),
         );
       }
     } else {
-      merged = incoming.copyWith(lastSeen: DateTime.now());
+      merged = resolvedIncoming.copyWith(lastSeen: DateTime.now());
     }
 
     _knownDevices[merged.id] = merged;
@@ -230,6 +329,26 @@ class NearbyService {
 
     _httpServer.onPortalEvent = (event) {
       onPortalEvent?.call(event);
+    };
+
+    _httpServer.onAirGrabReceived = (session) {
+      if (session.sender.id == _deviceId) return;
+      _mergeDiscoveredDevice(session.sender);
+      onAirGrabReceived?.call(session);
+    };
+
+    _httpServer.onAirCancelReceived = (token) {
+      onAirCancelReceived?.call(token);
+    };
+
+    _httpServer.onAirClaimReceived = (token, claimer) {
+      if (claimer.id == _deviceId) return;
+      _mergeDiscoveredDevice(claimer);
+      onAirClaimReceived?.call(token, claimer);
+    };
+
+    _httpServer.onAirActiveRequested = () {
+      return onAirActiveRequested?.call();
     };
   }
 
@@ -313,6 +432,30 @@ class NearbyService {
       await _directP2p.startWifiDirectDiscovery(isPassive: false);
     } catch (e) {
       debugPrint('[NearbyService] boostWarmDiscovery note: $e');
+    }
+  }
+
+  /// Refreshes local IP and re-announces the receiver immediately after
+  /// returning from Hotspot / Wi-Fi settings.
+  Future<void> refreshAdvertisingNetwork(String deviceName) async {
+    if (!_isAdvertising) return;
+    try {
+      NetworkInfoService.invalidateCache();
+      final ip = await NetworkInfoService.getLocalIpAddress() ?? '0.0.0.0';
+      final base = _localDevice ?? await _ensureLocalDevice(deviceName);
+      _localDevice = base.copyWith(ip: ip);
+      if (_discoveryService.isRunning) {
+        _discoveryService.updateLocalDevice(_localDevice!);
+        await _discoveryService.triggerBurst();
+      } else {
+        await _discoveryService.startDiscovery(
+          localDevice: _localDevice!,
+          isReceiver: true,
+          isPassive: false,
+        );
+      }
+    } catch (e) {
+      debugPrint('[NearbyService] refreshAdvertisingNetwork note: $e');
     }
   }
 
@@ -692,5 +835,120 @@ class NearbyService {
 
   void disconnect(String endpointId) {
     onDisconnected?.call(endpointId);
+  }
+
+  Future<NearbyDevice> ensureAirDeviceReady(
+    String deviceName, {
+    bool requireHttpServer = false,
+  }) async {
+    var local = await _ensureLocalDevice(deviceName);
+    if (requireHttpServer && !_httpServer.isRunning) {
+      final boundPort = await _httpServer.startServer(localDevice: local);
+      if (boundPort != null) {
+        local = local.copyWith(port: boundPort);
+        _localDevice = local;
+      }
+    } else if (_httpServer.isRunning && _httpServer.port != null) {
+      local = local.copyWith(port: _httpServer.port);
+      _localDevice = local;
+    }
+
+    if (!_discoveryService.isRunning) {
+      await _discoveryService.startDiscovery(
+        localDevice: local,
+        isReceiver: _isAdvertising,
+        isPassive: false,
+      );
+    } else {
+      _discoveryService.updateLocalDevice(local);
+    }
+    return local;
+  }
+
+  Future<void> broadcastAirGrab(AirGrabSession session) async {
+    await _discoveryService.broadcastAirGrab(session);
+    for (final peer in _knownDevices.values) {
+      if (peer.hasLanIp && peer.id != _deviceId) {
+        unawaited(_httpClient.postAirGrab(peer, session));
+      }
+    }
+  }
+
+  Future<void> pushAirGrabToDevice(
+    AirGrabSession session,
+    NearbyDevice target,
+  ) async {
+    if (!target.hasLanIp || target.id == _deviceId) return;
+    _discoveryService.sendAirGrabDirect(target, session);
+    await _httpClient.postAirGrab(target, session);
+  }
+
+  Future<void> broadcastAirCancel(String token) async {
+    await _discoveryService.broadcastAirCancel(token);
+    for (final peer in _knownDevices.values) {
+      if (peer.hasLanIp && peer.id != _deviceId) {
+        unawaited(_httpClient.postAirCancel(peer, token));
+      }
+    }
+  }
+
+  Future<void> sendAirClaim(AirGrabSession session) async {
+    _knownDevices[session.sender.id] = session.sender;
+    final local = _localDevice ?? await _ensureLocalDevice('Receiver');
+    await _discoveryService.sendAirClaim(session);
+    await _httpClient.postAirClaim(session, local);
+  }
+
+  Future<bool> startAirHotspot(AirGrabSession session) async {
+    if (!Platform.isAndroid) return false;
+    return await _directP2p.startWifiDirectAdvertising(
+      id: session.sender.id,
+      name: session.sender.name,
+      port: session.sender.port,
+      airToken: session.token,
+    );
+  }
+
+  Future<void> stopAirHotspot({bool resumeDiscovery = false}) async {
+    if (!Platform.isAndroid) return;
+    await _directP2p.stopWifiDirectAdvertising();
+    if (resumeDiscovery) {
+      await _directP2p.startWifiDirectDiscovery(isPassive: false);
+    }
+  }
+
+  Future<bool> startAirDirectDiscovery() async {
+    if (!Platform.isAndroid) return false;
+    await _directP2p.stopWifiDirectAdvertising();
+    return await _directP2p.startWifiDirectDiscovery(isPassive: false);
+  }
+
+  Future<AirGrabSession?> connectToAirSenderHotspot(NearbyDevice sender) async {
+    if (!Platform.isAndroid) return null;
+    await _directP2p.stopWifiDirectAdvertising();
+    final res = await _directP2p.connectToPeer(
+      ssid: sender.p2pSsid,
+      passphrase: sender.p2pPassphrase,
+      deviceAddress: sender.p2pDeviceAddress,
+      goIp: sender.p2pGoIp,
+    );
+    if (!res.success) return null;
+
+    final targetIp = (res.goIp != null && res.goIp!.isNotEmpty)
+        ? res.goIp!
+        : (sender.p2pGoIp ?? '192.168.49.1');
+    NetworkInfoService.invalidateCache();
+
+    for (int attempt = 0; attempt < 5; attempt++) {
+      final session = await _httpClient.fetchActiveAirGrab(targetIp, sender.port);
+      if (session != null) {
+        _knownDevices[sender.id] = session.sender;
+        return session;
+      }
+      if (attempt < 4) {
+        await Future.delayed(const Duration(milliseconds: 400));
+      }
+    }
+    return null;
   }
 }

@@ -53,7 +53,7 @@ class NetworkInfoService {
 
     final name = interfaceName.toLowerCase();
 
-    // Cellular interfaces
+    // Cellular / IMS / ePDG interfaces
     if (name.contains('rmnet') ||
         name.contains('ccmni') ||
         name.contains('pdp') ||
@@ -61,7 +61,12 @@ class NetworkInfoService {
         name.contains('clat') ||
         name.contains('radio') ||
         name.contains('cellular') ||
-        name.contains('mobile')) {
+        name.contains('mobile') ||
+        name.contains('epdg') ||
+        name.contains('ims') ||
+        name.contains('qmi') ||
+        name.contains('vsnet') ||
+        name.contains('dummy')) {
       return false;
     }
 
@@ -96,8 +101,10 @@ class NetworkInfoService {
       return false;
     }
 
-    // For unknown adapter names, require private RFC1918 IPv4 to avoid public cellular IPs
+    // On Android, only accept recognized Wi-Fi / LAN / Hotspot / P2P interfaces so
+    // cellular private 10.x.x.x adapters never falsely report Wi-Fi Connected.
     if (!_isPrimaryWifiOrLanName(name) && !_isHotspotOrP2pName(name)) {
+      if (Platform.isAndroid) return false;
       return _isPrivateRfc1918(ip);
     }
 

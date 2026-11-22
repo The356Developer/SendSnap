@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
+import '../models/air_session.dart';
 import '../models/device.dart';
 import '../models/transfer.dart';
 import 'file_handler.dart';
@@ -48,6 +49,10 @@ class HttpTransferServer {
   FileCompletedCallback? onFileCompleted;
   TransferFailedCallback? onFileFailed;
   ValueChanged<Map<String, dynamic>>? onPortalEvent;
+  Function(AirGrabSession)? onAirGrabReceived;
+  Function(String token)? onAirCancelReceived;
+  Function(String token, NearbyDevice claimer)? onAirClaimReceived;
+  AirGrabSession? Function()? onAirActiveRequested;
 
   int? get port => _server?.port;
   bool get isRunning => _server != null;
@@ -120,6 +125,14 @@ class HttpTransferServer {
         await _handleUpload(request);
       } else if (path == '/api/v1/cancel' && request.method == 'POST') {
         await _handleCancel(request);
+      } else if (path == '/api/v1/air/grab' && request.method == 'POST') {
+        await _handleAirGrab(request);
+      } else if (path == '/api/v1/air/cancel' && request.method == 'POST') {
+        await _handleAirCancel(request);
+      } else if (path == '/api/v1/air/claim' && request.method == 'POST') {
+        await _handleAirClaim(request);
+      } else if (path == '/api/v1/air/active' && request.method == 'GET') {
+        await _handleAirActive(request);
       } else {
         request.response.statusCode = HttpStatus.notFound;
         request.response.write('Not Found');
@@ -315,6 +328,93 @@ class HttpTransferServer {
     }
     request.response.statusCode = HttpStatus.ok;
     request.response.write(jsonEncode({'status': 'cancelled'}));
+    await request.response.close();
+  }
+
+  Future<void> _handleAirGrab(HttpRequest request) async {
+    final body = await utf8.decodeStream(request);
+    final data = jsonDecode(body) as Map<String, dynamic>;
+    final airData = data['air'] as Map<String, dynamic>?;
+    if (airData != null) {
+      final parsed = AirGrabSession.fromJson(airData);
+      final remoteAddr = request.connectionInfo?.remoteAddress.address ?? '';
+      final senderIp = (remoteAddr.isNotEmpty &&
+              remoteAddr != '0.0.0.0' &&
+              !remoteAddr.contains(':'))
+          ? remoteAddr
+          : parsed.sender.ip;
+      final ttlMs = (data['ttlMs'] as num?)?.toInt();
+      final normalized = parsed.copyWith(
+        sender: parsed.sender.copyWith(
+          ip: senderIp,
+          connectionType: 'lan',
+          lastSeen: DateTime.now(),
+        ),
+        expiresAt: ttlMs != null
+            ? DateTime.now().add(Duration(milliseconds: ttlMs.clamp(1000, 60000)))
+            : null,
+      );
+      if (!normalized.isExpired) {
+        onAirGrabReceived?.call(normalized);
+      }
+    }
+    request.response.headers.contentType = ContentType.json;
+    request.response.statusCode = HttpStatus.ok;
+    request.response.write(jsonEncode({'status': 'ok'}));
+    await request.response.close();
+  }
+
+  Future<void> _handleAirCancel(HttpRequest request) async {
+    final body = await utf8.decodeStream(request);
+    final data = jsonDecode(body) as Map<String, dynamic>;
+    final token = data['token'] as String?;
+    if (token != null && token.isNotEmpty) {
+      onAirCancelReceived?.call(token);
+    }
+    request.response.headers.contentType = ContentType.json;
+    request.response.statusCode = HttpStatus.ok;
+    request.response.write(jsonEncode({'status': 'ok'}));
+    await request.response.close();
+  }
+
+  Future<void> _handleAirClaim(HttpRequest request) async {
+    final body = await utf8.decodeStream(request);
+    final data = jsonDecode(body) as Map<String, dynamic>;
+    final token = data['token'] as String?;
+    final claimerMap = data['claimer'] as Map<String, dynamic>?;
+    if (token != null && token.isNotEmpty && claimerMap != null) {
+      final parsedClaimer = NearbyDevice.fromJson(claimerMap);
+      final remoteAddr = request.connectionInfo?.remoteAddress.address ?? '';
+      final claimerIp = (remoteAddr.isNotEmpty &&
+              remoteAddr != '0.0.0.0' &&
+              !remoteAddr.contains(':'))
+          ? remoteAddr
+          : parsedClaimer.ip;
+      final normalizedClaimer = parsedClaimer.copyWith(
+        ip: claimerIp,
+        connectionType: 'lan',
+        lastSeen: DateTime.now(),
+      );
+      onAirClaimReceived?.call(token, normalizedClaimer);
+    }
+    request.response.headers.contentType = ContentType.json;
+    request.response.statusCode = HttpStatus.ok;
+    request.response.write(jsonEncode({'status': 'ok'}));
+    await request.response.close();
+  }
+
+  Future<void> _handleAirActive(HttpRequest request) async {
+    final session = onAirActiveRequested?.call();
+    if (session != null && !session.isExpired) {
+      request.response.headers.contentType = ContentType.json;
+      request.response.statusCode = HttpStatus.ok;
+      request.response.write(jsonEncode({
+        'air': session.toJson(),
+        'ttlMs': session.remainingDuration.inMilliseconds,
+      }));
+    } else {
+      request.response.statusCode = HttpStatus.noContent;
+    }
     await request.response.close();
   }
 

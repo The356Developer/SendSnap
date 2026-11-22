@@ -44,22 +44,47 @@ class PermissionService {
     return await Permission.locationWhenInUse.isGranted;
   }
 
-  /// Requests Nearby Wi-Fi permission (API 33+: NEARBY_WIFI_DEVICES, API <=32: Location).
+  /// Requests Nearby Wi-Fi permission (API 33+: NEARBY_WIFI_DEVICES, API <=32: Location),
+  /// plus non-blocking Bluetooth LE scan/advertise permissions on Android 12+.
   Future<bool> requestNearbyWifiPermission() async {
     if (!Platform.isAndroid) return true;
+    var wifiGranted = false;
     try {
       final androidVersion = await _getAndroidVersion();
       if (androidVersion >= 33) {
-        if (await Permission.nearbyWifiDevices.isGranted) return true;
-        final status = await Permission.nearbyWifiDevices.request();
-        debugPrint('[SendSnap] Permission nearbyWifiDevices: $status');
-        return status.isGranted;
+        if (await Permission.nearbyWifiDevices.isGranted) {
+          wifiGranted = true;
+        } else {
+          final status = await Permission.nearbyWifiDevices.request();
+          debugPrint('[SendSnap] Permission nearbyWifiDevices: $status');
+          wifiGranted = status.isGranted;
+        }
       } else {
-        if (await Permission.locationWhenInUse.isGranted) return true;
-        final status = await Permission.locationWhenInUse.request();
-        debugPrint('[SendSnap] Permission locationWhenInUse: $status');
-        return status.isGranted;
+        if (await Permission.locationWhenInUse.isGranted) {
+          wifiGranted = true;
+        } else {
+          final status = await Permission.locationWhenInUse.request();
+          debugPrint('[SendSnap] Permission locationWhenInUse: $status');
+          wifiGranted = status.isGranted;
+        }
       }
+
+      if (androidVersion >= 31) {
+        try {
+          if (!await Permission.bluetoothScan.isGranted) {
+            final scanStatus = await Permission.bluetoothScan.request();
+            debugPrint('[SendSnap] Permission bluetoothScan: $scanStatus');
+          }
+          if (!await Permission.bluetoothAdvertise.isGranted) {
+            final advStatus = await Permission.bluetoothAdvertise.request();
+            debugPrint('[SendSnap] Permission bluetoothAdvertise: $advStatus');
+          }
+        } catch (e) {
+          debugPrint('[SendSnap] BLE permission request note: $e');
+        }
+      }
+
+      return wifiGranted;
     } catch (e) {
       debugPrint('[SendSnap] requestNearbyWifiPermission error: $e');
       return false;
@@ -119,6 +144,20 @@ class PermissionService {
   /// Location check (not strictly required for local Wi-Fi, returns true).
   Future<bool> ensureLocationEnabled() async {
     return true;
+  }
+
+  /// Requests camera permission for QR scanning and Air Gestures on Android.
+  Future<bool> requestCameraPermission() async {
+    if (!Platform.isAndroid) return true;
+    try {
+      if (await Permission.camera.isGranted) return true;
+      final status = await Permission.camera.request();
+      debugPrint('[SendSnap] Permission camera: $status');
+      return status.isGranted;
+    } catch (e) {
+      debugPrint('[SendSnap] requestCameraPermission error: $e');
+      return false;
+    }
   }
 
   /// Open app settings so user can manually grant permissions.

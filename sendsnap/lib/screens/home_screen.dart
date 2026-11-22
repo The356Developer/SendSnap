@@ -19,6 +19,8 @@ import '../models/transfer.dart';
 import '../providers/device_provider.dart';
 import '../providers/locale_provider.dart';
 import '../providers/transfer_provider.dart';
+import '../services/air_gesture_classifier.dart';
+import '../services/air_gesture_service.dart';
 import '../services/bidi_helper.dart';
 import '../services/direct_p2p_service.dart';
 import '../services/file_handler.dart';
@@ -48,6 +50,7 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   List<File> _selectedFiles = [];
+  List<File> _stagedAirFiles = [];
   List<LocalItem> _recentItems = [];
   String _incomingGhostFileName = '';
   double _incomingGhostPenetration = 0.0;
@@ -55,6 +58,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   NearbyDevice? _activeHoveredDevice;
   bool _isDesktopDragging = false;
   final PortalStreamClient _portalClient = PortalStreamClient();
+  final AirGestureService _airGestureService = AirGestureService();
+  StreamSubscription<AirGestureFrame>? _airFrameSub;
+  bool _isHandDetected = false;
+  bool _isAirTrackingStarting = false;
+  bool _airCameraDenied = false;
+  bool _appResumed = true;
+  DateTime? _airGrabStartedAt;
+  DateTime? _lastReceiverReleaseAt;
   bool _showEdgePortalHint = false;
   bool _isSearchHelpExpanded = false;
   bool _errorSnackBarVisible = false;
@@ -77,7 +88,28 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       final devProv = Provider.of<DeviceProvider>(context, listen: false);
+      final transProv = Provider.of<TransferProvider>(context, listen: false);
       devProv.onPortalEvent = _handleIncomingPortalEvent;
+      devProv.onAirSessionClaimed = (claimer, token) {
+        if (!mounted) return;
+        final filesToSend = _stagedAirFiles.isNotEmpty
+            ? List<File>.from(_stagedAirFiles)
+            : List<File>.from(_selectedFiles);
+        _stagedAirFiles = [];
+        _airGrabStartedAt = null;
+        if (filesToSend.isNotEmpty) {
+          _portalClient.sendDragDrop(
+            fileName: p.basename(filesToSend.first.path),
+          );
+          _initiateTransfer(
+            context,
+            claimer,
+            devProv,
+            transProv,
+            files: filesToSend,
+          );
+        }
+      };
       if (_selectedFiles.isNotEmpty && !devProv.isDiscovering) {
         devProv.startActiveDiscovery();
       } else {
@@ -92,16 +124,28 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (!mounted) return;
-    Provider.of<DeviceProvider>(context, listen: false)
-        .onAppLifecycleChanged(state);
-    if (state == AppLifecycleState.resumed) {
+    final devProv = Provider.of<DeviceProvider>(context, listen: false);
+    devProv.onAppLifecycleChanged(state);
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.inactive) {
+      _appResumed = false;
+      unawaited(_stopBackgroundAirTracking());
+    } else if (state == AppLifecycleState.resumed) {
+      _appResumed = true;
+      _airCameraDenied = false;
       _loadRecentFiles();
+      _syncBackgroundAirTracking(
+        devProv,
+        Provider.of<TransferProvider>(context, listen: false),
+      );
     }
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _airFrameSub?.cancel();
+    unawaited(_airGestureService.dispose());
     _portalClient.disconnect();
     super.dispose();
   }
@@ -253,6 +297,19 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     final isBusy = devProv.isAdvertising || devProv.isDiscovering;
 
     _showErrorIfNeeded(context, devProv);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        _syncBackgroundAirTracking(devProv, transProv);
+      }
+    });
+
+    final airIncoming = devProv.activeIncomingAirSession;
+    final ghostFileName = _incomingGhostFileName.isNotEmpty
+        ? _incomingGhostFileName
+        : (airIncoming?.previewName ?? '');
+    final ghostPenetration = _incomingGhostFileName.isNotEmpty
+        ? _incomingGhostPenetration
+        : (airIncoming != null ? 0.65 : 0.0);
 
     return CallbackShortcuts(
       bindings: <ShortcutActivator, VoidCallback>{
@@ -387,13 +444,16 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
                   // Incoming Portal Ghost Card for Receiver Mode
                   PortalGhostCard(
-                    isVisible: devProv.isAdvertising &&
-                        _incomingGhostFileName.isNotEmpty,
-                    fileName: _incomingGhostFileName,
-                    penetration: _incomingGhostPenetration,
+                    isVisible:
+                        devProv.isAdvertising && ghostFileName.isNotEmpty,
+                    fileName: ghostFileName,
+                    penetration: ghostPenetration,
                     normalizedY: _incomingGhostY,
                     isLeftEdge: true,
                   ),
+
+                  // Ambient Air Hand-Tracking Screen Glow
+                  _buildAirAuraOverlay(devProv),
 
                   // Desktop Drag & Drop Visual Overlay
                   if (_isDesktopDragging)
@@ -1282,9 +1342,17 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           if (_selectedFiles.isNotEmpty) ...[
             DraggableFileToken(
               files: _selectedFiles,
+              isAirGrabbed: devProv.isHoldingAirSession,
+              isHandDetected: _isHandDetected,
               onClear: () {
+                if (devProv.isHoldingAirSession) {
+                  unawaited(devProv.cancelAirGrab());
+                  _portalClient.sendDragCancel();
+                }
                 setState(() {
                   _selectedFiles = [];
+                  _stagedAirFiles = [];
+                  _airGrabStartedAt = null;
                 });
               },
               onAddMore: () => _pickAdditionalFiles(context),
@@ -1292,6 +1360,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 setState(() {
                   _selectedFiles.removeWhere((f) => f.path == file.path);
                 });
+                if (_selectedFiles.isEmpty && devProv.isHoldingAirSession) {
+                  unawaited(devProv.cancelAirGrab());
+                  _portalClient.sendDragCancel();
+                  _stagedAirFiles = [];
+                  _airGrabStartedAt = null;
+                }
               },
               onDragUpdate: (globalPos, {fileName}) {
                 _onDragUpdate(
@@ -1354,114 +1428,382 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             opacity: 0.75,
             borderRadius: 24,
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Expanded(
-                  child: Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(10),
-                        decoration: BoxDecoration(
-                          color: AppColors.success.withValues(alpha: 0.15),
-                          shape: BoxShape.circle,
-                        ),
-                        child: const Icon(
-                          Icons.wifi_tethering,
-                          size: 22,
-                          color: AppColors.success,
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            FittedBox(
-                              fit: BoxFit.scaleDown,
-                              alignment: AlignmentDirectional.centerStart,
-                              child: Text(
-                                l10n?.homeRadarReady ?? 'Ready to Receive',
-                                maxLines: 1,
-                                softWrap: false,
-                                style: TextStyle(
-                                  fontWeight: FontWeight.w800,
-                                  fontSize: 15,
-                                  color: titleColor,
-                                ),
-                              ),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Expanded(
+                      child: Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(10),
+                            decoration: BoxDecoration(
+                              color: AppColors.success.withValues(alpha: 0.15),
+                              shape: BoxShape.circle,
                             ),
-                            if (devProv.hasLanIp && devProv.localIp != null) ...[
-                              const SizedBox(height: 2),
-                              FittedBox(
-                                fit: BoxFit.scaleDown,
-                                alignment: AlignmentDirectional.centerStart,
-                                child: Text(
-                                  BidiHelper.isolate(devProv.localIp!),
-                                  maxLines: 1,
-                                  softWrap: false,
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w600,
-                                    color: AppColors.textSecondaryOf(context),
+                            child: const Icon(
+                              Icons.wifi_tethering,
+                              size: 22,
+                              color: AppColors.success,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                FittedBox(
+                                  fit: BoxFit.scaleDown,
+                                  alignment: AlignmentDirectional.centerStart,
+                                  child: Text(
+                                    l10n?.homeRadarReady ?? 'Ready to Receive',
+                                    maxLines: 1,
+                                    softWrap: false,
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w800,
+                                      fontSize: 15,
+                                      color: titleColor,
+                                    ),
                                   ),
                                 ),
+                                if (devProv.hasLanIp && devProv.localIp != null) ...[
+                                  const SizedBox(height: 2),
+                                  FittedBox(
+                                    fit: BoxFit.scaleDown,
+                                    alignment: AlignmentDirectional.centerStart,
+                                    child: Text(
+                                      BidiHelper.isolate(devProv.localIp!),
+                                      maxLines: 1,
+                                      softWrap: false,
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w600,
+                                        color: AppColors.textSecondaryOf(context),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    BouncingCard(
+                      onTap: () => _showReceiverQrCode(context, devProv),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 14, vertical: 9),
+                        decoration: BoxDecoration(
+                          gradient: AppColors.primaryGradient,
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(
+                              Icons.qr_code_2_rounded,
+                              size: 18,
+                              color: Colors.white,
+                            ),
+                            const SizedBox(width: 6),
+                            Text(
+                              l10n?.homeQrCode ?? 'QR Code',
+                              maxLines: 1,
+                              softWrap: false,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 13,
                               ),
-                            ],
+                            ),
                           ],
                         ),
                       ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
-                const SizedBox(width: 10),
-                BouncingCard(
-                  onTap: () => _showReceiverQrCode(context, devProv),
-                  child: Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+                if (devProv.airDirectStatusMessage != null) ...[
+                  const SizedBox(height: 12),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 12, vertical: 9),
                     decoration: BoxDecoration(
-                      gradient: AppColors.primaryGradient,
-                      borderRadius: BorderRadius.circular(16),
+                      color: AppColors.secondary.withValues(alpha: 0.14),
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(
+                        color: AppColors.secondary.withValues(alpha: 0.55),
+                      ),
                     ),
                     child: Row(
-                      mainAxisSize: MainAxisSize.min,
                       children: [
-                        const Icon(
-                          Icons.qr_code_2_rounded,
-                          size: 18,
-                          color: Colors.white,
+                        const SizedBox(
+                          width: 15,
+                          height: 15,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: AppColors.secondary,
+                          ),
                         ),
-                        const SizedBox(width: 6),
-                        Text(
-                          l10n?.homeQrCode ?? 'QR Code',
-                          maxLines: 1,
-                          softWrap: false,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 13,
+                        const SizedBox(width: 9),
+                        Expanded(
+                          child: Text(
+                            devProv.airDirectStatusMessage!,
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                              color: titleColor,
+                            ),
                           ),
                         ),
                       ],
                     ),
                   ),
-                ),
+                ] else if (!devProv.hasLanIp) ...[
+                  const SizedBox(height: 12),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 12, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: AppColors.warning.withValues(alpha: 0.14),
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(
+                        color: AppColors.warning.withValues(alpha: 0.55),
+                      ),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Padding(
+                              padding: EdgeInsets.only(top: 1),
+                              child: Icon(
+                                Icons.wifi_tethering_rounded,
+                                size: 17,
+                                color: AppColors.warning,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                'No shared Wi-Fi? Turn on Personal Hotspot on one device, then connect the other device\'s Wi-Fi to it.',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w700,
+                                  color: titleColor,
+                                  height: 1.35,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        if (Platform.isAndroid || Platform.isWindows) ...[
+                          const SizedBox(height: 10),
+                          _buildHotspotWifiButtons(
+                            context,
+                            devProv,
+                            compact: true,
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ],
               ],
             ),
           ),
         ],
 
-        // Sender Discovered Devices + Collapsible Search / Connect Card
+        // Sender Discovered Devices + Hotspot Guide + Collapsible Search / Connect Card
         if (devProv.isDiscovering) ...[
           const SizedBox(height: AppSpacing.m),
           if (devProv.nearbyDevices.isNotEmpty) ...[
             _buildDeviceDiscovery(context, devProv, transProv),
             const SizedBox(height: AppSpacing.m),
+          ] else if (!devProv.hasLanIp) ...[
+            _buildHotspotGuideCard(context, devProv),
+            const SizedBox(height: AppSpacing.m),
           ],
           _buildCollapsibleSearchCard(context, devProv, transProv),
         ],
       ],
+    );
+  }
+
+  Future<void> _launchConnectionSettings(
+    DeviceProvider devProv, {
+    required bool hotspot,
+  }) async {
+    HapticFeedback.selectionClick();
+    if (hotspot) {
+      await devProv.openHotspotSettings();
+    } else {
+      await devProv.openWifiSettings();
+    }
+    await Future.delayed(const Duration(milliseconds: 500));
+    await devProv.refreshNetworkStatus(forceRefresh: true);
+  }
+
+  Widget _buildHotspotWifiButtons(
+    BuildContext context,
+    DeviceProvider devProv, {
+    bool compact = false,
+  }) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final titleColor = isDark ? Colors.white : AppColors.textPrimary;
+    final vPad = compact ? 8.0 : 10.0;
+    final fontSize = compact ? 12.0 : 12.5;
+    final iconSize = compact ? 16.0 : 17.0;
+
+    return Row(
+      children: [
+        Expanded(
+          child: BouncingCard(
+            onTap: () => _launchConnectionSettings(devProv, hotspot: true),
+            child: Container(
+              padding: EdgeInsets.symmetric(horizontal: 8, vertical: vPad),
+              decoration: BoxDecoration(
+                color: AppColors.warning,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      Icons.wifi_tethering_rounded,
+                      size: iconSize,
+                      color: Colors.black,
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      'Open Hotspot',
+                      maxLines: 1,
+                      softWrap: false,
+                      style: TextStyle(
+                        fontSize: fontSize,
+                        fontWeight: FontWeight.w800,
+                        color: Colors.black,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: BouncingCard(
+            onTap: () => _launchConnectionSettings(devProv, hotspot: false),
+            child: Container(
+              padding: EdgeInsets.symmetric(horizontal: 8, vertical: vPad),
+              decoration: BoxDecoration(
+                color: isDark
+                    ? Colors.white.withValues(alpha: 0.10)
+                    : Colors.black.withValues(alpha: 0.06),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: (isDark ? Colors.white : Colors.black)
+                      .withValues(alpha: 0.12),
+                ),
+              ),
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      Icons.wifi_rounded,
+                      size: iconSize,
+                      color: titleColor,
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      'Open Wi-Fi',
+                      maxLines: 1,
+                      softWrap: false,
+                      style: TextStyle(
+                        fontSize: fontSize,
+                        fontWeight: FontWeight.w700,
+                        color: titleColor,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildHotspotGuideCard(
+    BuildContext context,
+    DeviceProvider devProv,
+  ) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final titleColor = isDark ? Colors.white : AppColors.textPrimary;
+    final bodyColor = AppColors.textSecondaryOf(context);
+
+    return GlassContainer(
+      blur: 16,
+      opacity: 0.80,
+      borderRadius: 22,
+      padding: const EdgeInsets.all(14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: AppColors.warning.withValues(alpha: 0.16),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.wifi_tethering_rounded,
+                  size: 18,
+                  color: AppColors.warning,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  'Connect Both Devices Directly',
+                  style: TextStyle(
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w800,
+                    color: titleColor,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Text(
+            '1. Turn on Personal Hotspot on one device\n2. Connect the other device\'s Wi-Fi to that hotspot, then return here',
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: bodyColor,
+              height: 1.45,
+            ),
+          ),
+          if (Platform.isAndroid || Platform.isWindows) ...[
+            const SizedBox(height: 12),
+            _buildHotspotWifiButtons(context, devProv),
+          ],
+        ],
+      ),
     );
   }
 
@@ -1564,7 +1906,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           if (_isSearchHelpExpanded) ...[
             const SizedBox(height: 10),
             Text(
-              'Make sure Wi-Fi is on and the other device tapped Receive, or connect directly below:',
+              'Connect both devices to the same Wi-Fi, or turn on Personal Hotspot on one phone and connect the other phone\'s Wi-Fi to it. You can also connect via QR or IP:',
               style: TextStyle(
                 fontSize: 11.5,
                 color: AppColors.textSecondaryOf(context),
@@ -1658,6 +2000,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 ),
               ],
             ),
+            if ((Platform.isAndroid || Platform.isWindows) &&
+                devProv.nearbyDevices.isEmpty) ...[
+              const SizedBox(height: 10),
+              _buildHotspotWifiButtons(context, devProv, compact: true),
+            ],
           ],
         ],
       ),
@@ -2472,5 +2819,216 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         }
       });
     }
+  }
+
+  void _syncBackgroundAirTracking(
+    DeviceProvider devProv,
+    TransferProvider transProv,
+  ) {
+    if (!Platform.isAndroid) return;
+
+    if (devProv.isAdvertising &&
+        devProv.activeIncomingAirSession != null &&
+        _lastReceiverReleaseAt != null &&
+        DateTime.now().difference(_lastReceiverReleaseAt!).inMilliseconds <=
+            2500) {
+      _lastReceiverReleaseAt = null;
+      HapticFeedback.heavyImpact();
+      unawaited(devProv.claimIncomingAirSession());
+    }
+
+    final shouldTrack = _appResumed &&
+        !transProv.isTransferRouteOpen &&
+        ((devProv.isDiscovering && _selectedFiles.isNotEmpty) ||
+            devProv.isAdvertising);
+
+    if (shouldTrack &&
+        !_airGestureService.isRunning &&
+        !_isAirTrackingStarting &&
+        !_airCameraDenied) {
+      unawaited(_startBackgroundAirTracking());
+    } else if (!shouldTrack && _airGestureService.isRunning) {
+      unawaited(_stopBackgroundAirTracking());
+    }
+  }
+
+  Future<void> _startBackgroundAirTracking() async {
+    if (_isAirTrackingStarting || _airGestureService.isRunning) return;
+    _isAirTrackingStarting = true;
+    try {
+      final supported = await _airGestureService.isSupported();
+      if (!supported) {
+        _airCameraDenied = true;
+        return;
+      }
+
+      var granted = await Permission.camera.isGranted;
+      if (!granted) {
+        granted = await PermissionService().requestCameraPermission();
+      }
+      if (!granted) {
+        _airCameraDenied = true;
+        return;
+      }
+
+      _airFrameSub ??= _airGestureService.frames.listen(
+        _onBackgroundAirFrame,
+        onError: (_) {},
+      );
+      await _airGestureService.start();
+    } finally {
+      _isAirTrackingStarting = false;
+    }
+  }
+
+  Future<void> _stopBackgroundAirTracking() async {
+    if (_airGestureService.isRunning) {
+      await _airGestureService.stop();
+    }
+    if (mounted && _isHandDetected) {
+      setState(() {
+        _isHandDetected = false;
+      });
+    }
+  }
+
+  void _onBackgroundAirFrame(AirGestureFrame frame) {
+    if (!mounted) return;
+    if (frame.detected != _isHandDetected) {
+      setState(() {
+        _isHandDetected = frame.detected;
+      });
+    }
+
+    final devProv = Provider.of<DeviceProvider>(context, listen: false);
+    final action = frame.triggeredAction;
+
+    // Sender mode: grab & cancel directly from the default Send screen
+    if (devProv.isDiscovering && _selectedFiles.isNotEmpty) {
+      if (action == AirGestureAction.grab && !devProv.isHoldingAirSession) {
+        HapticFeedback.heavyImpact();
+        _airGrabStartedAt = DateTime.now();
+        _stagedAirFiles = List<File>.from(_selectedFiles);
+
+        int totalBytes = 0;
+        for (final file in _stagedAirFiles) {
+          try {
+            totalBytes += file.lengthSync();
+          } catch (_) {}
+        }
+        final firstName = p.basename(_stagedAirFiles.first.path);
+        final previewName = _stagedAirFiles.length == 1
+            ? firstName
+            : '$firstName +${_stagedAirFiles.length - 1}';
+
+        unawaited(
+          devProv.stageAirGrab(
+            fileCount: _stagedAirFiles.length,
+            previewName: previewName,
+            totalBytes: totalBytes,
+          ),
+        );
+
+        final lanTarget = devProv.nearbyDevices
+            .where((d) => d.hasLanIp && !d.isWifiDirect)
+            .firstOrNull;
+        if (lanTarget != null) {
+          unawaited(
+            _portalClient.connect(lanTarget.ip, port: lanTarget.port).then((ok) {
+              if (ok) {
+                _portalClient.sendDragMove(
+                  fileName: previewName,
+                  penetration: 0.65,
+                  normalizedY: 0.5,
+                );
+              }
+            }),
+          );
+        }
+      } else if (action == AirGestureAction.release &&
+          devProv.isHoldingAirSession) {
+        final heldMs = _airGrabStartedAt == null
+            ? 0
+            : DateTime.now().difference(_airGrabStartedAt!).inMilliseconds;
+        final centered = frame.handCenter.dx >= 0.15 &&
+            frame.handCenter.dx <= 0.85 &&
+            frame.handCenter.dy >= 0.15 &&
+            frame.handCenter.dy <= 0.85;
+        if (heldMs >= 1500 && frame.openness >= 0.72 && centered) {
+          HapticFeedback.selectionClick();
+          _airGrabStartedAt = null;
+          _stagedAirFiles = [];
+          unawaited(devProv.cancelAirGrab());
+          _portalClient.sendDragCancel();
+        }
+      }
+      return;
+    }
+
+    // Receiver mode: open hand drops / receives the incoming grabbed file
+    if (devProv.isAdvertising) {
+      final incoming = devProv.activeIncomingAirSession;
+      final isOpenRelease = action == AirGestureAction.release ||
+          (incoming != null &&
+              frame.posture == HandPosture.open &&
+              frame.openness >= 0.68);
+      if (isOpenRelease) {
+        if (incoming != null) {
+          HapticFeedback.heavyImpact();
+          _lastReceiverReleaseAt = null;
+          setState(() {
+            _incomingGhostPenetration = 1.0;
+          });
+          unawaited(devProv.claimIncomingAirSession());
+          Future.delayed(const Duration(milliseconds: 900), () {
+            if (mounted) {
+              setState(() {
+                _incomingGhostPenetration = 0.0;
+              });
+            }
+          });
+        } else if (action == AirGestureAction.release) {
+          _lastReceiverReleaseAt = DateTime.now();
+        }
+      }
+    }
+  }
+
+  Widget _buildAirAuraOverlay(DeviceProvider devProv) {
+    final bool isAirActive = devProv.isHoldingAirSession ||
+        (devProv.isAdvertising && devProv.activeIncomingAirSession != null);
+    final bool isAirLit = _isHandDetected || isAirActive;
+
+    return Positioned.fill(
+      child: IgnorePointer(
+        child: AnimatedOpacity(
+          opacity: isAirLit ? 1.0 : 0.0,
+          duration: const Duration(milliseconds: 260),
+          curve: Curves.easeOutCubic,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 260),
+            decoration: BoxDecoration(
+              border: Border.all(
+                color: AppColors.secondary.withValues(
+                  alpha: isAirActive ? 0.78 : 0.36,
+                ),
+                width: isAirActive ? 3.5 : 2.0,
+              ),
+              gradient: RadialGradient(
+                center: Alignment.center,
+                radius: 0.95,
+                colors: [
+                  Colors.transparent,
+                  AppColors.secondary.withValues(
+                    alpha: isAirActive ? 0.22 : 0.08,
+                  ),
+                ],
+                stops: const [0.58, 1.0],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }

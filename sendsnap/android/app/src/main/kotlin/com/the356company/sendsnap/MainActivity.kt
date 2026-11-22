@@ -18,6 +18,7 @@ import android.webkit.MimeTypeMap
 import androidx.core.content.FileProvider
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
+import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodChannel
 import java.io.File
 import java.io.FileOutputStream
@@ -26,11 +27,15 @@ class MainActivity : FlutterActivity() {
 
     private val CHANNEL = "com.the356company.sendsnap/file_utils"
     private val DIRECT_P2P_CHANNEL = "com.the356company.sendsnap/direct_p2p"
+    private val AIR_GESTURE_CHANNEL = "com.the356company.sendsnap/air_gesture"
+    private val AIR_GESTURE_EVENTS_CHANNEL = "com.the356company.sendsnap/air_gesture_events"
     private var multicastLock: WifiManager.MulticastLock? = null
     private var sharedFilePaths: ArrayList<String> = ArrayList()
     private var wifiDirectManager: WifiDirectManager? = null
     private var nsdManager: NsdDiscoveryManager? = null
     private var directP2pChannel: MethodChannel? = null
+    private var airGestureManager: AirGestureManager? = null
+    private var airGestureEventSink: EventChannel.EventSink? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -634,6 +639,7 @@ class MainActivity : FlutterActivity() {
         }
 
         setupDirectP2pChannel(flutterEngine)
+        setupAirGestureChannel(flutterEngine)
     }
 
     private fun setupDirectP2pChannel(flutterEngine: FlutterEngine) {
@@ -679,6 +685,9 @@ class MainActivity : FlutterActivity() {
                 "openWifiPanel" -> {
                     result.success(directMgr.openWifiPanel(this))
                 }
+                "openHotspotSettings" -> {
+                    result.success(directMgr.openHotspotSettings(this))
+                }
                 "startNsdAdvertising" -> {
                     val id = call.argument<String>("id") ?: ""
                     val name = call.argument<String>("name") ?: "SendSnap Device"
@@ -720,8 +729,9 @@ class MainActivity : FlutterActivity() {
                     val id = call.argument<String>("id") ?: ""
                     val name = call.argument<String>("name") ?: "SendSnap Device"
                     val port = call.argument<Int>("port") ?: 53318
+                    val airToken = call.argument<String>("airToken")
                     var replied = false
-                    directMgr.startAdvertising(id, name, port) { success, error ->
+                    directMgr.startAdvertising(id, name, port, airToken) { success, error ->
                         runOnUiThread {
                             if (!replied) {
                                 replied = true
@@ -777,7 +787,60 @@ class MainActivity : FlutterActivity() {
         }
     }
 
+    private fun setupAirGestureChannel(flutterEngine: FlutterEngine) {
+        val messenger = flutterEngine.dartExecutor.binaryMessenger
+        val manager = airGestureManager ?: AirGestureManager(applicationContext, this).also {
+            airGestureManager = it
+        }
+
+        EventChannel(messenger, AIR_GESTURE_EVENTS_CHANNEL).setStreamHandler(
+            object : EventChannel.StreamHandler {
+                override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
+                    airGestureEventSink = events
+                }
+
+                override fun onCancel(arguments: Any?) {
+                    airGestureEventSink = null
+                    manager.stop()
+                }
+            }
+        )
+
+        MethodChannel(messenger, AIR_GESTURE_CHANNEL).setMethodCallHandler { call, result ->
+            when (call.method) {
+                "isSupported" -> {
+                    result.success(manager.isSupported())
+                }
+                "start" -> {
+                    manager.start(
+                        onFrame = { frameMap ->
+                            runOnUiThread {
+                                airGestureEventSink?.success(frameMap)
+                            }
+                        },
+                        onError = { errorMsg ->
+                            runOnUiThread {
+                                airGestureEventSink?.error("AIR_GESTURE_ERROR", errorMsg, null)
+                            }
+                        },
+                    )
+                    result.success(true)
+                }
+                "stop" -> {
+                    manager.stop()
+                    result.success(true)
+                }
+                else -> result.notImplemented()
+            }
+        }
+    }
+
     override fun onDestroy() {
+        try {
+            airGestureManager?.dispose()
+            airGestureManager = null
+        } catch (_: Exception) {}
+        airGestureEventSink = null
         try {
             wifiDirectManager?.dispose()
             wifiDirectManager = null

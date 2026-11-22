@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
+import '../models/air_session.dart';
 import '../models/device.dart';
 import '../models/transfer.dart';
 
@@ -178,5 +179,95 @@ class HttpTransferClient {
         queryParameters: {'sessionId': sessionId},
       );
     } catch (_) {}
+  }
+
+  Future<bool> postAirGrab(NearbyDevice target, AirGrabSession session) async {
+    if (!target.hasLanIp) return false;
+    try {
+      final response = await _pingDio.post(
+        'http://${target.ip}:${target.port}/api/v1/air/grab',
+        data: {
+          'air': session.toJson(),
+          'ttlMs': session.remainingDuration.inMilliseconds,
+        },
+        options: Options(contentType: Headers.jsonContentType),
+      );
+      return response.statusCode == 200;
+    } catch (e) {
+      debugPrint('[HttpClient] postAirGrab to ${target.ip} failed: $e');
+      return false;
+    }
+  }
+
+  Future<bool> postAirCancel(NearbyDevice target, String token) async {
+    if (!target.hasLanIp) return false;
+    try {
+      final response = await _pingDio.post(
+        'http://${target.ip}:${target.port}/api/v1/air/cancel',
+        data: {'token': token},
+        options: Options(contentType: Headers.jsonContentType),
+      );
+      return response.statusCode == 200;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<bool> postAirClaim(
+    AirGrabSession session,
+    NearbyDevice claimer,
+  ) async {
+    if (!session.sender.hasLanIp) return false;
+    try {
+      final response = await _pingDio.post(
+        'http://${session.sender.ip}:${session.sender.port}/api/v1/air/claim',
+        data: {
+          'token': session.token,
+          'claimer': claimer.toJson(),
+        },
+        options: Options(contentType: Headers.jsonContentType),
+      );
+      return response.statusCode == 200;
+    } catch (e) {
+      debugPrint(
+        '[HttpClient] postAirClaim to ${session.sender.ip} failed: $e',
+      );
+      return false;
+    }
+  }
+
+  Future<AirGrabSession?> fetchActiveAirGrab(String ip, int port) async {
+    if (ip.isEmpty || ip == '0.0.0.0') return null;
+    try {
+      final response = await _pingDio.get(
+        'http://$ip:$port/api/v1/air/active',
+        options: Options(responseType: ResponseType.json),
+      );
+      if (response.statusCode == 200 && response.data is Map) {
+        final data = response.data as Map<String, dynamic>;
+        final airData = data['air'] as Map<String, dynamic>?;
+        if (airData != null) {
+          final parsed = AirGrabSession.fromJson(airData);
+          final ttlMs = (data['ttlMs'] as num?)?.toInt();
+          final normalized = parsed.copyWith(
+            sender: parsed.sender.copyWith(
+              ip: ip,
+              port: port,
+              connectionType: 'lan',
+              lastSeen: DateTime.now(),
+            ),
+            expiresAt: ttlMs != null
+                ? DateTime.now()
+                    .add(Duration(milliseconds: ttlMs.clamp(1000, 60000)))
+                : null,
+          );
+          return normalized.isExpired ? null : normalized;
+        }
+      }
+      return null;
+    } catch (e) {
+      debugPrint('[HttpClient] fetchActiveAirGrab from $ip:$port note: $e');
+      return null;
+    }
   }
 }

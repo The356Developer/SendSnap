@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
+import '../models/air_session.dart';
 import '../models/device.dart';
 import 'network_info_service.dart';
 import 'http_transfer_client.dart';
@@ -34,6 +35,9 @@ class DiscoveryService {
   // Callbacks
   Function(NearbyDevice)? onDeviceFound;
   Function(String)? onDeviceLost;
+  Function(AirGrabSession)? onAirGrabReceived;
+  Function(String token)? onAirCancelReceived;
+  Function(String token, NearbyDevice claimer)? onAirClaimReceived;
 
   List<NearbyDevice> get devices => _discoveredDevices.values.toList();
   bool get isRunning => _running;
@@ -278,6 +282,55 @@ class DiscoveryService {
         return;
       }
 
+      final verifiedIp =
+          (device.ip.isEmpty || device.ip == '0.0.0.0') ? senderAddr : device.ip;
+
+      final updatedDevice = device.copyWith(
+        ip: verifiedIp,
+        connectionType: 'lan',
+        lastSeen: DateTime.now(),
+      );
+
+      // Process Air Gesture handshake events regardless of local discovery/receiver role
+      if (type == 'AIR_GRAB') {
+        final airData = json['air'] as Map<String, dynamic>?;
+        if (airData != null) {
+          final parsed = AirGrabSession.fromJson(airData);
+          final senderIp = (parsed.sender.ip.isEmpty || parsed.sender.ip == '0.0.0.0')
+              ? verifiedIp
+              : parsed.sender.ip;
+          final ttlMs = (json['ttlMs'] as num?)?.toInt();
+          final normalized = parsed.copyWith(
+            sender: parsed.sender.copyWith(
+              ip: senderIp,
+              connectionType: 'lan',
+              lastSeen: DateTime.now(),
+            ),
+            expiresAt: ttlMs != null
+                ? DateTime.now().add(Duration(milliseconds: ttlMs.clamp(1000, 60000)))
+                : null,
+          );
+          if (!normalized.isExpired) {
+            onAirGrabReceived?.call(normalized);
+          }
+        }
+        return;
+      } else if (type == 'AIR_CANCEL') {
+        final token = json['token'] as String?;
+        if (token != null && token.isNotEmpty) {
+          onAirCancelReceived?.call(token);
+        }
+        return;
+      } else if (type == 'AIR_CLAIM') {
+        final token = json['token'] as String?;
+        if (token != null && token.isNotEmpty) {
+          _discoveredDevices[updatedDevice.id] = updatedDevice;
+          onDeviceFound?.call(updatedDevice);
+          onAirClaimReceived?.call(token, updatedDevice);
+        }
+        return;
+      }
+
       // Receiver always replies immediately with double unicast ANNOUNCE when pinged with DISCOVER
       if (type == 'DISCOVER' && _isReceiver && _myDevice != null) {
         _sendDirect(datagram.address, discoveryPort, 'ANNOUNCE');
@@ -297,15 +350,6 @@ class DiscoveryService {
 
       if (_isReceiver) return;
 
-      final verifiedIp =
-          (device.ip.isEmpty || device.ip == '0.0.0.0') ? senderAddr : device.ip;
-
-      final updatedDevice = device.copyWith(
-        ip: verifiedIp,
-        connectionType: 'lan',
-        lastSeen: DateTime.now(),
-      );
-
       if (type == 'ANNOUNCE' || type == 'DISCOVER') {
         _discoveredDevices[updatedDevice.id] = updatedDevice;
         onDeviceFound?.call(updatedDevice);
@@ -318,7 +362,66 @@ class DiscoveryService {
     }
   }
 
-  Future<void> _sendBroadcast(String type) async {
+  Future<void> broadcastAirGrab(AirGrabSession session) async {
+    final extra = {
+      'air': session.toJson(),
+      'ttlMs': session.remainingDuration.inMilliseconds,
+    };
+    for (final peer in _discoveredDevices.values) {
+      if (peer.hasLanIp) {
+        try {
+          _sendDirect(
+            InternetAddress(peer.ip),
+            discoveryPort,
+            'AIR_GRAB',
+            extra: extra,
+          );
+        } catch (_) {}
+      }
+    }
+    await _sendBroadcastPayload('AIR_GRAB', extra: extra);
+  }
+
+  void sendAirGrabDirect(NearbyDevice target, AirGrabSession session) {
+    if (!target.hasLanIp) return;
+    try {
+      _sendDirect(
+        InternetAddress(target.ip),
+        discoveryPort,
+        'AIR_GRAB',
+        extra: {
+          'air': session.toJson(),
+          'ttlMs': session.remainingDuration.inMilliseconds,
+        },
+      );
+    } catch (_) {}
+  }
+
+  Future<void> broadcastAirCancel(String token) async {
+    await _sendBroadcastPayload('AIR_CANCEL', extra: {'token': token});
+  }
+
+  Future<void> sendAirClaim(AirGrabSession session) async {
+    final extra = <String, dynamic>{'token': session.token};
+    if (session.sender.hasLanIp) {
+      try {
+        _sendDirect(
+          InternetAddress(session.sender.ip),
+          discoveryPort,
+          'AIR_CLAIM',
+          extra: extra,
+        );
+      } catch (_) {}
+    }
+    await _sendBroadcastPayload('AIR_CLAIM', extra: extra);
+  }
+
+  Future<void> _sendBroadcast(String type) => _sendBroadcastPayload(type);
+
+  Future<void> _sendBroadcastPayload(
+    String type, {
+    Map<String, dynamic>? extra,
+  }) async {
     if (_socket == null || _myDevice == null) return;
 
     try {
@@ -326,12 +429,14 @@ class DiscoveryService {
       if (localIps.isEmpty) return;
 
       final broadcastIps = await NetworkInfoService.getBroadcastAddresses();
-      final packetData = utf8.encode(jsonEncode({
+      final payload = <String, dynamic>{
         'protocol': protocolTag,
         'type': type,
         'role': _isReceiver ? 'receiver' : 'sender',
         'device': _myDevice!.toJson(),
-      }));
+        ...?extra,
+      };
+      final packetData = utf8.encode(jsonEncode(payload));
 
       for (final broadcastIp in broadcastIps) {
         try {
@@ -343,15 +448,22 @@ class DiscoveryService {
     }
   }
 
-  void _sendDirect(InternetAddress address, int port, String type) {
+  void _sendDirect(
+    InternetAddress address,
+    int port,
+    String type, {
+    Map<String, dynamic>? extra,
+  }) {
     if (_socket == null || _myDevice == null) return;
     try {
-      final packetData = utf8.encode(jsonEncode({
+      final payload = <String, dynamic>{
         'protocol': protocolTag,
         'type': type,
         'role': _isReceiver ? 'receiver' : 'sender',
         'device': _myDevice!.toJson(),
-      }));
+        ...?extra,
+      };
+      final packetData = utf8.encode(jsonEncode(payload));
       _socket?.send(packetData, address, port);
     } catch (e) {
       debugPrint('[DiscoveryService] Direct send error: $e');

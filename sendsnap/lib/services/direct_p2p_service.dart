@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../models/device.dart';
 
 class DirectHotspotInfo {
@@ -112,6 +113,7 @@ class DirectP2pService {
   Function(NearbyDevice device)? onNsdDeviceFound;
   Function(String deviceId)? onNsdDeviceLost;
   Function(NearbyDevice device)? onWifiDirectDeviceFound;
+  Function(NearbyDevice sender, String airToken)? onAirWifiDirectSenderFound;
   Function(DirectHotspotInfo? hotspot)? onDirectHotspotReady;
   Function(bool connected, String? goIp)? onDirectConnectionChanged;
   Function(bool enabled)? onWifiStateChanged;
@@ -166,8 +168,13 @@ class DirectP2pService {
               p2pGoIp: (args['p2pGoIp'] as String?) ?? '192.168.49.1',
               lastSeen: DateTime.now(),
             );
+            final airToken = (args['airToken'] as String?) ?? '';
             if (device.id.isNotEmpty) {
-              onWifiDirectDeviceFound?.call(device);
+              if (airToken.isNotEmpty) {
+                onAirWifiDirectSenderFound?.call(device, airToken);
+              } else {
+                onWifiDirectDeviceFound?.call(device);
+              }
             }
           }
           break;
@@ -213,12 +220,44 @@ class DirectP2pService {
     return const DirectP2pStatus();
   }
 
+  Future<bool> _launchWindowsSettings(String primaryUri) async {
+    for (final raw in [primaryUri, 'ms-settings:network-status']) {
+      try {
+        if (await launchUrl(
+          Uri.parse(raw),
+          mode: LaunchMode.externalApplication,
+        )) {
+          return true;
+        }
+      } catch (e) {
+        debugPrint('[DirectP2pService] Windows settings ($raw) error: $e');
+      }
+    }
+    return false;
+  }
+
   Future<bool> openWifiPanel() async {
+    if (Platform.isWindows) {
+      return _launchWindowsSettings('ms-settings:network-wifi');
+    }
     if (!Platform.isAndroid) return false;
     try {
       return (await _channel.invokeMethod<bool>('openWifiPanel')) ?? false;
     } catch (e) {
       debugPrint('[DirectP2pService] openWifiPanel error: $e');
+      return false;
+    }
+  }
+
+  Future<bool> openHotspotSettings() async {
+    if (Platform.isWindows) {
+      return _launchWindowsSettings('ms-settings:network-mobilehotspot');
+    }
+    if (!Platform.isAndroid) return false;
+    try {
+      return (await _channel.invokeMethod<bool>('openHotspotSettings')) ?? false;
+    } catch (e) {
+      debugPrint('[DirectP2pService] openHotspotSettings error: $e');
       return false;
     }
   }
@@ -275,12 +314,18 @@ class DirectP2pService {
     required String id,
     required String name,
     required int port,
+    String? airToken,
   }) async {
     if (!Platform.isAndroid) return false;
     try {
       final result = await _channel.invokeMapMethod<dynamic, dynamic>(
         'startWifiDirectAdvertising',
-        {'id': id, 'name': name, 'port': port},
+        {
+          'id': id,
+          'name': name,
+          'port': port,
+          if (airToken != null && airToken.isNotEmpty) 'airToken': airToken,
+        },
       );
       return (result?['success'] as bool?) ?? false;
     } catch (e) {
