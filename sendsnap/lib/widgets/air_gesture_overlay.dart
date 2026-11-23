@@ -108,7 +108,9 @@ class _AirGestureOverlayState extends State<AirGestureOverlay>
     if (!supported) {
       setState(() {
         _initializing = false;
-        _errorMessage = 'Front camera is not available on this device.';
+        _errorMessage = Platform.isWindows
+            ? 'Webcam is not available on this device.'
+            : 'Front camera is not available on this device.';
       });
       return;
     }
@@ -141,7 +143,9 @@ class _AirGestureOverlayState extends State<AirGestureOverlay>
     setState(() {
       _initializing = false;
       if (!started) {
-        _errorMessage = 'Could not start the front camera for Air Gestures.';
+        _errorMessage = Platform.isWindows
+            ? 'Could not start the webcam for Air Gestures.'
+            : 'Could not start the front camera for Air Gestures.';
       }
     });
   }

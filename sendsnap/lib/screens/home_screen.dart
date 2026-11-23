@@ -2821,11 +2821,21 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     }
   }
 
+  bool _shouldRunBackgroundAirTracking(
+    DeviceProvider devProv,
+    TransferProvider transProv,
+  ) {
+    return _appResumed &&
+        !transProv.isTransferRouteOpen &&
+        ((devProv.isDiscovering && _selectedFiles.isNotEmpty) ||
+            devProv.isAdvertising);
+  }
+
   void _syncBackgroundAirTracking(
     DeviceProvider devProv,
     TransferProvider transProv,
   ) {
-    if (!Platform.isAndroid) return;
+    if (!Platform.isAndroid && !Platform.isWindows) return;
 
     if (devProv.isAdvertising &&
         devProv.activeIncomingAirSession != null &&
@@ -2837,17 +2847,15 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       unawaited(devProv.claimIncomingAirSession());
     }
 
-    final shouldTrack = _appResumed &&
-        !transProv.isTransferRouteOpen &&
-        ((devProv.isDiscovering && _selectedFiles.isNotEmpty) ||
-            devProv.isAdvertising);
+    final shouldTrack = _shouldRunBackgroundAirTracking(devProv, transProv);
 
     if (shouldTrack &&
         !_airGestureService.isRunning &&
         !_isAirTrackingStarting &&
         !_airCameraDenied) {
       unawaited(_startBackgroundAirTracking());
-    } else if (!shouldTrack && _airGestureService.isRunning) {
+    } else if (!shouldTrack &&
+        (_airGestureService.isRunning || _isAirTrackingStarting)) {
       unawaited(_stopBackgroundAirTracking());
     }
   }
@@ -2862,27 +2870,46 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         return;
       }
 
-      var granted = await Permission.camera.isGranted;
-      if (!granted) {
-        granted = await PermissionService().requestCameraPermission();
+      if (Platform.isAndroid) {
+        var granted = await Permission.camera.isGranted;
+        if (!granted) {
+          granted = await PermissionService().requestCameraPermission();
+        }
+        if (!granted) {
+          _airCameraDenied = true;
+          return;
+        }
       }
-      if (!granted) {
-        _airCameraDenied = true;
-        return;
-      }
+
+      if (!mounted || !_appResumed) return;
 
       _airFrameSub ??= _airGestureService.frames.listen(
         _onBackgroundAirFrame,
         onError: (_) {},
       );
-      await _airGestureService.start();
+      final started = await _airGestureService.start();
+      if (!mounted) {
+        await _airGestureService.stop();
+        return;
+      }
+      final devProv = Provider.of<DeviceProvider>(context, listen: false);
+      final transProv = Provider.of<TransferProvider>(context, listen: false);
+      final stillShouldTrack =
+          _shouldRunBackgroundAirTracking(devProv, transProv);
+      if (started && !stillShouldTrack) {
+        await _airGestureService.stop();
+        return;
+      }
+      if (!started && stillShouldTrack) {
+        _airCameraDenied = true;
+      }
     } finally {
       _isAirTrackingStarting = false;
     }
   }
 
   Future<void> _stopBackgroundAirTracking() async {
-    if (_airGestureService.isRunning) {
+    if (_airGestureService.isRunning || _isAirTrackingStarting) {
       await _airGestureService.stop();
     }
     if (mounted && _isHandDetected) {

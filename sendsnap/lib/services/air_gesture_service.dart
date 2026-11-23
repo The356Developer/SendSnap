@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 import 'air_gesture_classifier.dart';
+import 'windows_air_gesture_backend.dart';
 
 class AirGestureService {
   static const MethodChannel _methodChannel =
@@ -17,6 +18,7 @@ class AirGestureService {
       StreamController<AirGestureFrame>.broadcast();
 
   StreamSubscription<dynamic>? _nativeSubscription;
+  WindowsAirGestureBackend? _windowsBackend;
   bool _isRunning = false;
 
   AirGestureService({AirGestureClassifier? classifier})
@@ -27,20 +29,57 @@ class AirGestureService {
   bool get isRunning => _isRunning;
 
   Future<bool> isSupported() async {
-    if (!Platform.isAndroid) return false;
-    try {
-      final supported = await _methodChannel.invokeMethod<bool>('isSupported');
-      return supported ?? false;
-    } catch (e) {
-      debugPrint('[AirGestureService] isSupported error: $e');
-      return false;
+    if (Platform.isAndroid) {
+      try {
+        final supported = await _methodChannel.invokeMethod<bool>('isSupported');
+        return supported ?? false;
+      } catch (e) {
+        debugPrint('[AirGestureService] isSupported error: $e');
+        return false;
+      }
     }
+    if (Platform.isWindows) {
+      try {
+        final backend = _windowsBackend ??= WindowsAirGestureBackend();
+        return await backend.isSupported();
+      } catch (e) {
+        debugPrint('[AirGestureService] Windows isSupported error: $e');
+        return false;
+      }
+    }
+    return false;
   }
 
   Future<bool> start() async {
-    if (!Platform.isAndroid) return false;
+    if (!Platform.isAndroid && !Platform.isWindows) return false;
     await stop();
     _classifier.reset();
+
+    if (Platform.isWindows) {
+      try {
+        final backend = _windowsBackend ??= WindowsAirGestureBackend();
+        final started = await backend.start(
+          onFrame: ({
+            required bool detected,
+            required List<HandLandmark> landmarks,
+            required int timestampMs,
+          }) {
+            _emitClassifiedFrame(
+              detected: detected,
+              landmarks: landmarks,
+              timestampMs: timestampMs,
+            );
+          },
+          onError: _emitStreamError,
+        );
+        _isRunning = started;
+        return _isRunning;
+      } catch (e) {
+        debugPrint('[AirGestureService] Windows start error: $e');
+        _isRunning = false;
+        return false;
+      }
+    }
 
     try {
       _nativeSubscription = _eventChannel.receiveBroadcastStream().listen(
@@ -55,21 +94,13 @@ class AirGestureService {
               .map(HandLandmark.fromMap)
               .toList(growable: false);
 
-          final frame = _classifier.classify(
+          _emitClassifiedFrame(
             detected: detected,
             landmarks: landmarks,
             timestampMs: timestampMs,
           );
-          if (!_frameController.isClosed) {
-            _frameController.add(frame);
-          }
         },
-        onError: (Object error) {
-          debugPrint('[AirGestureService] Stream error: $error');
-          if (!_frameController.isClosed) {
-            _frameController.addError(error);
-          }
-        },
+        onError: _emitStreamError,
       );
 
       final started = await _methodChannel.invokeMethod<bool>('start');
@@ -88,6 +119,28 @@ class AirGestureService {
     }
   }
 
+  void _emitClassifiedFrame({
+    required bool detected,
+    required List<HandLandmark> landmarks,
+    required int timestampMs,
+  }) {
+    final frame = _classifier.classify(
+      detected: detected,
+      landmarks: landmarks,
+      timestampMs: timestampMs,
+    );
+    if (!_frameController.isClosed) {
+      _frameController.add(frame);
+    }
+  }
+
+  void _emitStreamError(Object error) {
+    debugPrint('[AirGestureService] Stream error: $error');
+    if (!_frameController.isClosed) {
+      _frameController.addError(error);
+    }
+  }
+
   Future<void> stop() async {
     _isRunning = false;
     try {
@@ -99,12 +152,22 @@ class AirGestureService {
       try {
         await _methodChannel.invokeMethod<bool>('stop');
       } catch (_) {}
+    } else if (Platform.isWindows) {
+      try {
+        await _windowsBackend?.stop();
+      } catch (_) {}
     }
     _classifier.reset();
   }
 
   Future<void> dispose() async {
     await stop();
+    if (Platform.isWindows) {
+      try {
+        await _windowsBackend?.dispose();
+      } catch (_) {}
+      _windowsBackend = null;
+    }
     await _frameController.close();
   }
 }
