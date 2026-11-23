@@ -27,6 +27,7 @@ class AirGestureService {
 
   Stream<AirGestureFrame> get frames => _frameController.stream;
   bool get isRunning => _isRunning;
+  bool get _usesDesktopBackend => Platform.isWindows || Platform.isLinux;
 
   Future<bool> isSupported() async {
     if (Platform.isAndroid) {
@@ -38,12 +39,12 @@ class AirGestureService {
         return false;
       }
     }
-    if (Platform.isWindows) {
+    if (_usesDesktopBackend) {
       try {
         final backend = _windowsBackend ??= WindowsAirGestureBackend();
         return await backend.isSupported();
       } catch (e) {
-        debugPrint('[AirGestureService] Windows isSupported error: $e');
+        debugPrint('[AirGestureService] Desktop isSupported error: $e');
         return false;
       }
     }
@@ -51,11 +52,11 @@ class AirGestureService {
   }
 
   Future<bool> start() async {
-    if (!Platform.isAndroid && !Platform.isWindows) return false;
+    if (!Platform.isAndroid && !_usesDesktopBackend) return false;
     await stop();
     _classifier.reset();
 
-    if (Platform.isWindows) {
+    if (_usesDesktopBackend) {
       try {
         final backend = _windowsBackend ??= WindowsAirGestureBackend();
         final started = await backend.start(
@@ -75,7 +76,7 @@ class AirGestureService {
         _isRunning = started;
         return _isRunning;
       } catch (e) {
-        debugPrint('[AirGestureService] Windows start error: $e');
+        debugPrint('[AirGestureService] Desktop start error: $e');
         _isRunning = false;
         return false;
       }
@@ -152,7 +153,7 @@ class AirGestureService {
       try {
         await _methodChannel.invokeMethod<bool>('stop');
       } catch (_) {}
-    } else if (Platform.isWindows) {
+    } else if (_usesDesktopBackend) {
       try {
         await _windowsBackend?.stop();
       } catch (_) {}
@@ -162,7 +163,7 @@ class AirGestureService {
 
   Future<void> dispose() async {
     await stop();
-    if (Platform.isWindows) {
+    if (_usesDesktopBackend) {
       try {
         await _windowsBackend?.dispose();
       } catch (_) {}

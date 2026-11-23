@@ -1,18 +1,22 @@
 #!/usr/bin/env bash
 # SendSnap Debian/Ubuntu (.deb) Package Builder
-set -e
+set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 DEB_DIR="$PROJECT_ROOT/build/deb_package"
 DIST_DIR="$PROJECT_ROOT/dist/linux"
-VERSION="2.2.2"
+VERSION="$(grep -E '^version:' "$PROJECT_ROOT/pubspec.yaml" | head -n1 | sed -E 's/^version:[[:space:]]*//' | cut -d'+' -f1 | tr -d '\r' || true)"
+VERSION="${VERSION:-2.2.9}"
 
-echo "=== Building SendSnap .deb Package ==="
+echo "=== Building SendSnap .deb Package (v${VERSION}) ==="
 
-# 1. Build Flutter Linux Release
 cd "$PROJECT_ROOT"
-flutter build linux --release
+
+# 1. Build Flutter Linux Release unless --skip-build is passed
+if [ "${1:-}" != "--skip-build" ]; then
+  flutter build linux --release
+fi
 
 # 2. Prepare .deb File Tree
 rm -rf "$DEB_DIR"
@@ -24,7 +28,7 @@ mkdir -p "$DEB_DIR/DEBIAN"
 mkdir -p "$DIST_DIR"
 
 # Copy binaries
-cp -r "$PROJECT_ROOT/build/linux/x64/release/bundle/"* "$DEB_DIR/opt/sendsnap/"
+cp -a "$PROJECT_ROOT/build/linux/x64/release/bundle/." "$DEB_DIR/opt/sendsnap/"
 
 # Symlink to /usr/bin
 ln -sf /opt/sendsnap/sendsnap "$DEB_DIR/usr/bin/sendsnap"
@@ -41,10 +45,15 @@ Section: net
 Priority: optional
 Architecture: amd64
 Maintainer: The 356 Company <support@the356company.com>
+Depends: libgtk-3-0, libstdc++6
 Description: SendSnap - Fast Nearby File Share
- Fast, secure, cross-platform local network file sharing with ethereal handoff gestures.
+ Fast, secure, cross-platform local network file sharing with Air Grab gestures.
 EOF
 
+chmod -R a+rX "$DEB_DIR"
+chmod 0755 "$DEB_DIR/DEBIAN"
+
 # 3. Build .deb package
-dpkg-deb --build "$DEB_DIR" "$DIST_DIR/sendsnap_${VERSION}_amd64.deb"
-echo "Package created at $DIST_DIR/sendsnap_${VERSION}_amd64.deb"
+OUT_DEB="$DIST_DIR/sendsnap_${VERSION}_amd64.deb"
+dpkg-deb --build --root-owner-group "$DEB_DIR" "$OUT_DEB"
+echo "Package created at $OUT_DEB"

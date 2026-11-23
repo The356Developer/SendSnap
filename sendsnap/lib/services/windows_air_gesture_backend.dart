@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:hand_detection/hand_detection.dart' as hd;
@@ -271,14 +272,20 @@ class WindowsAirGestureBackend {
   }
 
   Future<cv.VideoCapture?> _openCapture() async {
-    final dshow = await cv.VideoCaptureAsync.fromDeviceAsync(
-      0,
-      apiPreference: cv.CAP_DSHOW,
-    );
-    if (dshow.isOpened) {
-      return dshow;
+    final int? preferredBackend = Platform.isWindows
+        ? cv.CAP_DSHOW
+        : (Platform.isLinux ? cv.CAP_V4L2 : null);
+
+    if (preferredBackend != null) {
+      final preferred = await cv.VideoCaptureAsync.fromDeviceAsync(
+        0,
+        apiPreference: preferredBackend,
+      );
+      if (preferred.isOpened) {
+        return preferred;
+      }
+      _disposeCapture(preferred);
     }
-    _disposeCapture(dshow);
 
     final fallback = await cv.VideoCaptureAsync.fromDeviceAsync(0);
     if (fallback.isOpened) {

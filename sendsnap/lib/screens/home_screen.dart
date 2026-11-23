@@ -2835,7 +2835,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     DeviceProvider devProv,
     TransferProvider transProv,
   ) {
-    if (!Platform.isAndroid && !Platform.isWindows) return;
+    if (!Platform.isAndroid && !Platform.isWindows && !Platform.isLinux) {
+      return;
+    }
 
     if (devProv.isAdvertising &&
         devProv.activeIncomingAirSession != null &&
