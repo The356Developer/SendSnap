@@ -5,6 +5,7 @@ import 'package:sendsnap/services/direct_p2p_service.dart';
 import 'package:sendsnap/services/discovery_service.dart';
 import 'package:sendsnap/services/http_transfer_client.dart';
 import 'package:sendsnap/services/http_transfer_server.dart';
+import 'package:sendsnap/services/nearby_service.dart';
 import 'package:sendsnap/services/network_info_service.dart';
 
 void main() {
@@ -196,6 +197,60 @@ void main() {
         expect(sw.elapsedMilliseconds, lessThan(1500));
       } finally {
         await server.stopServer();
+      }
+    });
+  });
+
+  group('Cross-network Direct Wi-Fi & BLE-UUID lookup', () {
+    test('NearbyService.getDevice resolves ble-<hex12> to merged UUID and vice versa', () {
+      final service = NearbyService();
+
+      // Case 1: Full UUID registered, queried via ble-<hex12> alias
+      final uuidDevice = NearbyDevice(
+        id: 'a1b2c3d4-e5f6-7890-1234-567890abcdef',
+        name: 'Receiver Phone',
+        ip: '192.168.1.50',
+        port: 53318,
+        deviceType: 'android',
+      );
+      service.addManualDevice(uuidDevice);
+
+      final resolvedFromBle = service.getDevice('ble-a1b2c3d4e5f6');
+      expect(resolvedFromBle, isNotNull);
+      expect(resolvedFromBle!.id, uuidDevice.id);
+      expect(resolvedFromBle.name, 'Receiver Phone');
+
+      // Case 2: ble-<hex12> registered, queried via full UUID alias
+      final bleService = NearbyService();
+      final bleDevice = NearbyDevice(
+        id: 'ble-ffeeddccbbaa',
+        name: 'Offline Phone',
+        ip: '',
+        port: 53318,
+        deviceType: 'android',
+        connectionType: 'wifi_direct',
+        p2pSsid: 'DIRECT-S5-SnapTest',
+        p2pPassphrase: 'PassWord1',
+      );
+      bleService.addManualDevice(bleDevice);
+
+      final resolvedFromUuid = bleService.getDevice('ffeeddcc-bbaa-1122-3344-556677889900');
+      expect(resolvedFromUuid, isNotNull);
+      expect(resolvedFromUuid!.id, bleDevice.id);
+      expect(resolvedFromUuid.p2pSsid, 'DIRECT-S5-SnapTest');
+    });
+
+    test('DirectP2pService.connectToPeer accepts port and returns clean error off-Android', () async {
+      final p2p = DirectP2pService();
+      final res = await p2p.connectToPeer(
+        ssid: 'DIRECT-S5-Snap1234',
+        passphrase: 'Password1',
+        goIp: '192.168.49.1',
+        port: 53319,
+      );
+      if (!Platform.isAndroid) {
+        expect(res.success, isFalse);
+        expect(res.error, isNotNull);
       }
     });
   });

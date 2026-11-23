@@ -221,7 +221,7 @@ class BleDiscoveryManager(private val context: Context) {
             val suffixBytes = advSsid.substring(DIRECT_PREFIX.length).toByteArray(Charsets.US_ASCII)
             val passBytes = advPassphrase.toByteArray(Charsets.US_ASCII)
             if (suffixBytes.size != 4 || passBytes.size != 8) {
-                val (genericAdv, genericResp) = buildFormat02Payloads(idBytes)
+                val (genericAdv, genericResp) = buildFormat02Payloads(idBytes) ?: return
                 advPayload = genericAdv
                 scanRespPayload = genericResp
             } else {
@@ -239,7 +239,7 @@ class BleDiscoveryManager(private val context: Context) {
                 System.arraycopy(nameBytes, 0, scanRespPayload, 1, nameBytes.size)
             }
         } else {
-            val (genericAdv, genericResp) = buildFormat02Payloads(idBytes)
+            val (genericAdv, genericResp) = buildFormat02Payloads(idBytes) ?: return
             advPayload = genericAdv
             scanRespPayload = genericResp
         }
@@ -271,10 +271,18 @@ class BleDiscoveryManager(private val context: Context) {
         }
     }
 
-    private fun buildFormat02Payloads(idBytes: ByteArray): Pair<ByteArray, ByteArray> {
+    private fun buildFormat02Payloads(idBytes: ByteArray): Pair<ByteArray, ByteArray>? {
+        val ssidBytes = advSsid.toByteArray(Charsets.UTF_8)
+        val passBytes = advPassphrase.toByteArray(Charsets.UTF_8)
+        if (ssidBytes.size > 18 || passBytes.size > 19) {
+            Log.w(
+                TAG,
+                "Skipping BLE Format 02 advertising: credentials exceed 18/19 bytes (ssid=${ssidBytes.size}, pass=${passBytes.size})"
+            )
+            return null
+        }
+
         val (o3, o4) = parseIpLastTwoOctets(advGoIp)
-        val ssidBytes = truncateUtf8(advSsid, 17)
-        val passBytes = truncateUtf8(advPassphrase, 15)
 
         val advPayload = ByteArray(6 + ssidBytes.size)
         advPayload[0] = FORMAT_GENERIC_HOTSPOT
@@ -458,12 +466,12 @@ class BleDiscoveryManager(private val context: Context) {
         val o3 = adv[3].toInt() and 0xFF
         val o4 = adv[4].toInt() and 0xFF
         val ssidLen = adv[5].toInt() and 0xFF
-        if (ssidLen <= 0 || ssidLen > 17 || adv.size < 6 + ssidLen) return null
+        if (ssidLen <= 0 || ssidLen > 18 || adv.size < 6 + ssidLen) return null
         val ssid = String(adv, 6, ssidLen, Charsets.UTF_8)
 
         val hex12 = bytesToHex(resp, 1, 6)
         val passLen = resp[7].toInt() and 0xFF
-        if (passLen <= 0 || passLen > 15 || resp.size < 8 + passLen) return null
+        if (passLen <= 0 || passLen > 19 || resp.size < 8 + passLen) return null
         val pass = String(resp, 8, passLen, Charsets.UTF_8)
 
         if (ssid.isEmpty() || pass.isEmpty()) return null

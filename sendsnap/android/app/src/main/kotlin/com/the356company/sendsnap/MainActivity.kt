@@ -762,8 +762,9 @@ class MainActivity : FlutterActivity() {
                     val passphrase = call.argument<String>("passphrase")
                     val deviceAddress = call.argument<String>("deviceAddress")
                     val goIp = call.argument<String>("goIp")
+                    val port = call.argument<Int>("port") ?: 53318
                     var replied = false
-                    directMgr.connectToPeer(ssid, passphrase, deviceAddress, goIp) { success, ip, error ->
+                    directMgr.connectToPeer(ssid, passphrase, deviceAddress, goIp, port) { success, ip, error ->
                         runOnUiThread {
                             if (!replied) {
                                 replied = true

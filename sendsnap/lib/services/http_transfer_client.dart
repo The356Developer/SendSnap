@@ -122,6 +122,27 @@ class HttpTransferClient {
     }
   }
 
+  Stream<List<int>> _pausableFileStream(
+    File file, {
+    bool Function()? isPaused,
+    Future<void> Function()? waitWhilePaused,
+    bool Function()? isCancelled,
+  }) async* {
+    await for (final chunk in file.openRead()) {
+      while ((isPaused?.call() ?? false) && !(isCancelled?.call() ?? false)) {
+        if (waitWhilePaused != null) {
+          await waitWhilePaused();
+        } else {
+          await Future.delayed(const Duration(milliseconds: 50));
+        }
+      }
+      if (isCancelled?.call() ?? false) {
+        break;
+      }
+      yield chunk;
+    }
+  }
+
   /// Streams a file to the target device with real-time speed and progress monitoring.
   Future<bool> uploadFile({
     required NearbyDevice target,
@@ -130,6 +151,9 @@ class HttpTransferClient {
     required File file,
     required Function(int sentBytes, int totalBytes, double speed) onProgress,
     CancelToken? cancelToken,
+    bool Function()? isPaused,
+    Future<void> Function()? waitWhilePaused,
+    bool Function()? isCancelled,
   }) async {
     final fileLength = await file.length();
     final stopwatch = Stopwatch()..start();
@@ -142,7 +166,12 @@ class HttpTransferClient {
           'sessionId': sessionId,
           'fileId': fileTransfer.id,
         },
-        data: file.openRead(),
+        data: _pausableFileStream(
+          file,
+          isPaused: isPaused,
+          waitWhilePaused: waitWhilePaused,
+          isCancelled: isCancelled,
+        ),
         options: Options(
           headers: {
             HttpHeaders.contentLengthHeader: fileLength,
@@ -154,8 +183,11 @@ class HttpTransferClient {
           final now = DateTime.now();
           if (now.difference(lastUpdate).inMilliseconds >= 100 || sent == total) {
             lastUpdate = now;
+            final paused = isPaused?.call() ?? false;
             final elapsedSeconds = stopwatch.elapsedMilliseconds / 1000.0;
-            final speed = elapsedSeconds > 0 ? (sent / elapsedSeconds) : 0.0;
+            final speed = paused
+                ? 0.0
+                : (elapsedSeconds > 0 ? (sent / elapsedSeconds) : 0.0);
             onProgress(sent, fileLength, speed);
           }
         },
@@ -163,20 +195,27 @@ class HttpTransferClient {
 
       return response.statusCode == 200;
     } catch (e) {
+      if (e is DioException && e.type == DioExceptionType.cancel) {
+        return false;
+      }
       debugPrint('[HttpClient] uploadFile error for ${fileTransfer.fileName}: $e');
       return false;
     }
   }
 
-  /// Cancels an active session on the target device.
+  /// Cancels an active session or specific file on the target device.
   Future<void> cancelTransfer({
     required NearbyDevice target,
     required String sessionId,
+    String? fileId,
   }) async {
     try {
-      await _dio.post(
+      await _pingDio.post(
         'http://${target.ip}:${target.port}/api/v1/cancel',
-        queryParameters: {'sessionId': sessionId},
+        queryParameters: {
+          'sessionId': sessionId,
+          if (fileId != null && fileId.isNotEmpty) 'fileId': fileId,
+        },
       );
     } catch (_) {}
   }

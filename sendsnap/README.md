@@ -19,8 +19,9 @@ flutter gen-l10n
 # Run tests
 flutter test
 
-# Run on Windows or Android
+# Run on Windows, Linux, or Android
 flutter run -d windows
+flutter run -d linux
 flutter run -d android
 ```
 

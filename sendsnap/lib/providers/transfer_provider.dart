@@ -12,6 +12,7 @@ class TransferProvider with ChangeNotifier {
   String? _peerName;
   bool _sessionIsIncoming = false;
   bool _isTransferRouteOpen = false;
+  NearbyService? _activeService;
 
   // Callbacks for UI navigation & notification
   VoidCallback? onTransferStarted;
@@ -46,14 +47,34 @@ class TransferProvider with ChangeNotifier {
   bool get hasActiveBatch => currentBatchTransfers.any(
         (t) =>
             t.status == TransferStatus.inProgress ||
-            t.status == TransferStatus.pending,
+            t.status == TransferStatus.pending ||
+            t.status == TransferStatus.paused,
       );
+
+  bool get isBatchPaused {
+    final active = currentBatchTransfers.where(
+      (t) =>
+          t.status == TransferStatus.inProgress ||
+          t.status == TransferStatus.pending ||
+          t.status == TransferStatus.paused,
+    );
+    return active.isNotEmpty &&
+        active.every((t) => t.status == TransferStatus.paused);
+  }
 
   bool get isBatchComplete =>
       currentBatchTransfers.isNotEmpty && !hasActiveBatch;
 
   int get completedBatchCount => currentBatchTransfers
       .where((t) => t.status == TransferStatus.completed)
+      .length;
+
+  int get cancelledBatchCount => currentBatchTransfers
+      .where((t) => t.status == TransferStatus.cancelled)
+      .length;
+
+  int get errorOnlyBatchCount => currentBatchTransfers
+      .where((t) => t.status == TransferStatus.failed)
       .length;
 
   int get failedBatchCount => currentBatchTransfers
@@ -97,6 +118,9 @@ class TransferProvider with ChangeNotifier {
     final batch = currentBatchTransfers;
     for (final t in batch) {
       if (t.status == TransferStatus.inProgress) return t;
+    }
+    for (final t in batch) {
+      if (t.status == TransferStatus.paused) return t;
     }
     for (final t in batch) {
       if (t.status == TransferStatus.pending) return t;
@@ -155,6 +179,17 @@ class TransferProvider with ChangeNotifier {
     handleIncomingBatch(sender, [transfer]);
   }
 
+  FileTransfer _nextActiveOrFallback(FileTransfer fallback) {
+    for (final t in currentBatchTransfers) {
+      if (t.status == TransferStatus.inProgress ||
+          t.status == TransferStatus.paused ||
+          t.status == TransferStatus.pending) {
+        return t;
+      }
+    }
+    return fallback;
+  }
+
   void updateTransferProgress({
     required String transferId,
     required int bytesTransferred,
@@ -164,11 +199,18 @@ class TransferProvider with ChangeNotifier {
     final index = _transfers.indexWhere((t) => t.id == transferId);
     if (index == -1) return;
 
-    final updated = _transfers[index].copyWith(
+    final existing = _transfers[index];
+    if (existing.status == TransferStatus.cancelled ||
+        existing.status == TransferStatus.completed) {
+      return;
+    }
+
+    final isPaused = existing.status == TransferStatus.paused;
+    final updated = existing.copyWith(
       transferredBytes: bytesTransferred,
-      fileSize: totalBytes > 0 ? totalBytes : _transfers[index].fileSize,
-      speed: speed,
-      status: TransferStatus.inProgress,
+      fileSize: totalBytes > 0 ? totalBytes : existing.fileSize,
+      speed: isPaused ? 0.0 : speed,
+      status: isPaused ? TransferStatus.paused : TransferStatus.inProgress,
     );
 
     _transfers[index] = updated;
@@ -195,16 +237,7 @@ class TransferProvider with ChangeNotifier {
     );
 
     _transfers[index] = completed;
-
-    FileTransfer? nextActive;
-    for (final t in currentBatchTransfers) {
-      if (t.status == TransferStatus.inProgress ||
-          t.status == TransferStatus.pending) {
-        nextActive = t;
-        break;
-      }
-    }
-    _activeTransfer = nextActive ?? completed;
+    _activeTransfer = _nextActiveOrFallback(completed);
     notifyListeners();
     if (isBatchComplete) {
       onTransferCompleted?.call();
@@ -218,24 +251,159 @@ class TransferProvider with ChangeNotifier {
     final index = _transfers.indexWhere((t) => t.id == transferId);
     if (index == -1) return;
 
-    final failed = _transfers[index].copyWith(
+    final existing = _transfers[index];
+    if (existing.status == TransferStatus.completed ||
+        existing.status == TransferStatus.cancelled) {
+      return;
+    }
+
+    final failed = existing.copyWith(
       status: TransferStatus.failed,
       errorMessage: error,
       speed: 0.0,
     );
 
     _transfers[index] = failed;
+    _activeTransfer = _nextActiveOrFallback(failed);
+    notifyListeners();
+  }
 
-    FileTransfer? nextActive;
-    for (final t in currentBatchTransfers) {
+  void markTransferCancelled({required String transferId}) {
+    final index = _transfers.indexWhere((t) => t.id == transferId);
+    if (index == -1) return;
+
+    final existing = _transfers[index];
+    if (existing.status == TransferStatus.completed ||
+        existing.status == TransferStatus.cancelled) {
+      return;
+    }
+
+    final cancelled = existing.copyWith(
+      status: TransferStatus.cancelled,
+      errorMessage: 'Cancelled',
+      speed: 0.0,
+    );
+
+    _transfers[index] = cancelled;
+    _activeTransfer = _nextActiveOrFallback(cancelled);
+    notifyListeners();
+    if (isBatchComplete) {
+      onTransferCompleted?.call();
+    }
+  }
+
+  void setTransferPaused({
+    required String transferId,
+    required bool paused,
+  }) {
+    final index = _transfers.indexWhere((t) => t.id == transferId);
+    if (index == -1) return;
+
+    final existing = _transfers[index];
+    if (existing.status == TransferStatus.completed ||
+        existing.status == TransferStatus.cancelled ||
+        existing.status == TransferStatus.failed) {
+      return;
+    }
+
+    final nextStatus = paused
+        ? TransferStatus.paused
+        : (existing.transferredBytes > 0
+            ? TransferStatus.inProgress
+            : TransferStatus.pending);
+
+    if (existing.status == nextStatus && (!paused || existing.speed == 0.0)) {
+      return;
+    }
+
+    final updated = existing.copyWith(
+      status: nextStatus,
+      speed: paused ? 0.0 : existing.speed,
+    );
+
+    _transfers[index] = updated;
+    if (_activeTransfer?.id == transferId) {
+      _activeTransfer = updated;
+    } else {
+      _activeTransfer = currentActiveFile;
+    }
+    notifyListeners();
+  }
+
+  Future<void> cancelAll() async {
+    final wasComplete = isBatchComplete;
+    bool changed = false;
+    final batchIds = _currentSessionIds.toSet();
+    for (int i = 0; i < _transfers.length; i++) {
+      final t = _transfers[i];
+      if (batchIds.isNotEmpty && !batchIds.contains(t.id)) continue;
       if (t.status == TransferStatus.inProgress ||
-          t.status == TransferStatus.pending) {
-        nextActive = t;
-        break;
+          t.status == TransferStatus.pending ||
+          t.status == TransferStatus.paused) {
+        _transfers[i] = t.copyWith(
+          status: TransferStatus.cancelled,
+          errorMessage: 'Cancelled',
+          speed: 0.0,
+        );
+        changed = true;
       }
     }
-    _activeTransfer = nextActive ?? failed;
-    notifyListeners();
+    if (changed) {
+      _activeTransfer = currentActiveFile;
+      notifyListeners();
+      if (!wasComplete && isBatchComplete) {
+        onTransferCompleted?.call();
+      }
+    }
+    await _activeService?.cancelActiveBatch();
+  }
+
+  Future<void> cancelFile(String transferId) async {
+    markTransferCancelled(transferId: transferId);
+    await _activeService?.cancelFileTransfer(transferId);
+  }
+
+  void togglePauseAll() {
+    final shouldPause = !isBatchPaused;
+    final batchIds = _currentSessionIds.toSet();
+    bool changed = false;
+    for (int i = 0; i < _transfers.length; i++) {
+      final t = _transfers[i];
+      if (batchIds.isNotEmpty && !batchIds.contains(t.id)) continue;
+      if (t.status == TransferStatus.inProgress ||
+          t.status == TransferStatus.pending ||
+          t.status == TransferStatus.paused) {
+        final nextStatus = shouldPause
+            ? TransferStatus.paused
+            : (t.transferredBytes > 0
+                ? TransferStatus.inProgress
+                : TransferStatus.pending);
+        _transfers[i] = t.copyWith(
+          status: nextStatus,
+          speed: shouldPause ? 0.0 : t.speed,
+        );
+        changed = true;
+      }
+    }
+    if (changed) {
+      _activeTransfer = currentActiveFile;
+      notifyListeners();
+    }
+    _activeService?.setBatchPaused(shouldPause);
+  }
+
+  void togglePauseFile(String transferId) {
+    final index = _transfers.indexWhere((t) => t.id == transferId);
+    if (index == -1) return;
+    final existing = _transfers[index];
+    if (existing.status == TransferStatus.completed ||
+        existing.status == TransferStatus.cancelled ||
+        existing.status == TransferStatus.failed) {
+      return;
+    }
+    final nextPaused = existing.status != TransferStatus.paused;
+    setTransferPaused(transferId: transferId, paused: nextPaused);
+    _activeService?.setFilePaused(transferId, nextPaused);
   }
 
   /// Initiates sending a file to target device.
@@ -273,6 +441,7 @@ class TransferProvider with ChangeNotifier {
     }
     _sessionIsIncoming = false;
     _peerName = target.name;
+    _activeService = service;
 
     final batchTs = DateTime.now().millisecondsSinceEpoch;
     final transfers = <FileTransfer>[];
@@ -307,11 +476,16 @@ class TransferProvider with ChangeNotifier {
     _currentSessionIds.clear();
     _activeTransfer = null;
     _peerName = null;
+    _activeService = null;
     notifyListeners();
   }
 
   void clearHistory() {
-    _transfers.removeWhere((t) => t.status != TransferStatus.inProgress);
+    _transfers.removeWhere(
+      (t) =>
+          t.status != TransferStatus.inProgress &&
+          t.status != TransferStatus.paused,
+    );
     _currentSessionIds.removeWhere(
       (id) => !_transfers.any((t) => t.id == id),
     );

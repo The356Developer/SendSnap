@@ -35,6 +35,11 @@ typedef TransferFailedCallback = void Function({
   required String error,
 });
 
+typedef TransferCancelledCallback = void Function({
+  required String sessionId,
+  required String fileId,
+});
+
 class HttpTransferServer {
   static const int defaultPort = 53318;
   HttpServer? _server;
@@ -43,11 +48,14 @@ class HttpTransferServer {
   // Active sessions: sessionId -> map of pending file info
   final Map<String, Map<String, FileTransfer>> _activeSessions = {};
   final Map<String, IOSink> _activeSinks = {};
+  final Map<String, File> _activeTempFiles = {};
+  final Set<String> _cancelledKeys = {};
 
   TransferRequestCallback? onRequestReceived;
   ProgressCallback? onProgress;
   FileCompletedCallback? onFileCompleted;
   TransferFailedCallback? onFileFailed;
+  TransferCancelledCallback? onFileCancelled;
   ValueChanged<Map<String, dynamic>>? onPortalEvent;
   Function(AirGrabSession)? onAirGrabReceived;
   Function(String token)? onAirCancelReceived;
@@ -69,6 +77,7 @@ class HttpTransferServer {
         port,
         shared: true,
       );
+      _server!.idleTimeout = const Duration(minutes: 60);
 
       _server!.listen(_handleRequest, onError: (e) {
         debugPrint('[HttpServer] Server error: $e');
@@ -80,6 +89,7 @@ class HttpTransferServer {
       debugPrint('[HttpServer] Failed to bind to port $port, trying ephemeral port...: $e');
       try {
         _server = await HttpServer.bind(InternetAddress.anyIPv4, 0, shared: true);
+        _server!.idleTimeout = const Duration(minutes: 60);
         _server!.listen(_handleRequest);
         debugPrint('[HttpServer] Running on fallback port ${_server!.port}');
         return _server!.port;
@@ -241,6 +251,7 @@ class HttpTransferServer {
     final sink = tempFile.openWrite();
     final sinkKey = '$sessionId-$fileId';
     _activeSinks[sinkKey] = sink;
+    _activeTempFiles[sinkKey] = tempFile;
 
     int bytesReceived = 0;
     final totalBytes = fileInfo.fileSize;
@@ -272,6 +283,12 @@ class HttpTransferServer {
       await sink.flush();
       await sink.close();
       _activeSinks.remove(sinkKey);
+      _activeTempFiles.remove(sinkKey);
+
+      sessionFiles?.remove(fileId);
+      if (sessionFiles != null && sessionFiles.isEmpty) {
+        _activeSessions.remove(sessionId);
+      }
 
       // Move completed file to safe downloads directory
       final savedFile = await FileHandler.moveFileToDownloads(tempFilePath, fileInfo.fileName);
@@ -294,6 +311,7 @@ class HttpTransferServer {
     } catch (e) {
       debugPrint('[HttpServer] Upload stream error: $e');
       _activeSinks.remove(sinkKey);
+      _activeTempFiles.remove(sinkKey);
       try {
         await sink.close();
       } catch (_) {}
@@ -301,31 +319,59 @@ class HttpTransferServer {
         if (await tempFile.exists()) await tempFile.delete();
       } catch (_) {}
 
-      onFileFailed?.call(
-        sessionId: sessionId,
-        fileId: fileId,
-        error: e.toString(),
-      );
+      final wasCancelled = _cancelledKeys.remove(sinkKey);
+      if (!wasCancelled) {
+        onFileFailed?.call(
+          sessionId: sessionId,
+          fileId: fileId,
+          error: e.toString(),
+        );
+      }
 
-      request.response.statusCode = HttpStatus.internalServerError;
-      request.response.write(jsonEncode({'error': e.toString()}));
-      await request.response.close();
+      try {
+        request.response.statusCode =
+            wasCancelled ? HttpStatus.clientClosedRequest : HttpStatus.internalServerError;
+        request.response.write(jsonEncode({'error': e.toString()}));
+        await request.response.close();
+      } catch (_) {}
     }
+  }
+
+  Future<void> _cleanupCancelledEntry(String sessionId, String fileId) async {
+    final sinkKey = '$sessionId-$fileId';
+    _cancelledKeys.add(sinkKey);
+    try {
+      await _activeSinks.remove(sinkKey)?.close();
+    } catch (_) {}
+    final tempFile = _activeTempFiles.remove(sinkKey);
+    if (tempFile != null) {
+      try {
+        if (await tempFile.exists()) await tempFile.delete();
+      } catch (_) {}
+    }
+    onFileCancelled?.call(sessionId: sessionId, fileId: fileId);
   }
 
   Future<void> _handleCancel(HttpRequest request) async {
     final sessionId = request.uri.queryParameters['sessionId'];
+    final fileId = request.uri.queryParameters['fileId'];
     if (sessionId != null) {
-      // Close any active write sinks for this session
-      final keysToCancel = _activeSinks.keys.where((k) => k.startsWith(sessionId)).toList();
-      for (final key in keysToCancel) {
-        try {
-          await _activeSinks[key]?.close();
-        } catch (_) {}
-        _activeSinks.remove(key);
+      if (fileId != null && fileId.isNotEmpty) {
+        await _cleanupCancelledEntry(sessionId, fileId);
+        final sessionFiles = _activeSessions[sessionId];
+        sessionFiles?.remove(fileId);
+        if (sessionFiles != null && sessionFiles.isEmpty) {
+          _activeSessions.remove(sessionId);
+        }
+      } else {
+        final fileIds = _activeSessions[sessionId]?.keys.toList() ?? const <String>[];
+        for (final id in fileIds) {
+          await _cleanupCancelledEntry(sessionId, id);
+        }
+        _activeSessions.remove(sessionId);
       }
-      _activeSessions.remove(sessionId);
     }
+    request.response.headers.contentType = ContentType.json;
     request.response.statusCode = HttpStatus.ok;
     request.response.write(jsonEncode({'status': 'cancelled'}));
     await request.response.close();
@@ -445,6 +491,8 @@ class HttpTransferServer {
       } catch (_) {}
     }
     _activeSinks.clear();
+    _activeTempFiles.clear();
+    _cancelledKeys.clear();
     _activeSessions.clear();
 
     try {

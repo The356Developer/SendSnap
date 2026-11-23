@@ -2593,7 +2593,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         : List<File>.from(_selectedFiles);
     if (filesToSend.isEmpty) return;
 
-    _showConnectingSheet(context, target.endpointName);
+    final isDirectWifi = target.isWifiDirect && !target.hasLanIp;
+    _showConnectingSheet(
+      context,
+      target.endpointName,
+      isDirectWifi: isDirectWifi,
+    );
     final scaffoldMessenger = ScaffoldMessenger.of(context);
     final nav = Navigator.of(context);
     final connected = await devProv.requestConnectionAndWait(target.endpointId);
@@ -2642,7 +2647,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     }
   }
 
-  void _showConnectingSheet(BuildContext context, String deviceName) {
+  void _showConnectingSheet(
+    BuildContext context,
+    String deviceName, {
+    bool isDirectWifi = false,
+  }) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     showModalBottomSheet(
       context: context,
@@ -2651,6 +2660,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       builder: (context) => BackdropFilter(
         filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
         child: Container(
+          constraints: const BoxConstraints(minHeight: 220),
           decoration: BoxDecoration(
             color: (isDark ? const Color(0xFF171B24) : Colors.white)
                 .withValues(alpha: 0.92),
@@ -2658,8 +2668,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 const BorderRadius.vertical(top: Radius.circular(32)),
           ),
           padding: const EdgeInsets.all(AppSpacing.xl),
-          height: 220,
           child: Column(
+            mainAxisSize: MainAxisSize.min,
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               const CircularProgressIndicator(),
@@ -2667,12 +2677,25 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               Text(
                 AppLocalizations.of(context)?.transferConnecting(deviceName) ??
                     'Connecting to $deviceName...',
+                textAlign: TextAlign.center,
                 style: TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.w700,
                   color: AppColors.textPrimaryOf(context),
                 ),
               ),
+              if (isDirectWifi) ...[
+                const SizedBox(height: AppSpacing.s),
+                Text(
+                  'Setting up direct Wi-Fi link… Tap "Connect" if Android asks.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
+                    color: AppColors.textSecondaryOf(context),
+                  ),
+                ),
+              ],
             ],
           ),
         ),

@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
 import '../models/air_session.dart';
@@ -49,7 +50,21 @@ class NearbyService {
       onTransferProgress;
   Function(String transferId, String savedPath)? onTransferCompleted;
   Function(String transferId, String error)? onTransferFailed;
+  Function(String transferId)? onTransferCancelled;
+  Function(String transferId, bool paused)? onTransferPausedChanged;
   Function(Map<String, dynamic> event)? onPortalEvent;
+
+  // Active outgoing session controls
+  String? _activeOutgoingSessionId;
+  NearbyDevice? _activeOutgoingTarget;
+  final List<String> _activeOutgoingFileIds = [];
+  bool _sessionCancelled = false;
+  bool _batchPaused = false;
+  final Set<String> _cancelledFileIds = {};
+  final Set<String> _pausedFileIds = {};
+  String? _currentUploadingFileId;
+  CancelToken? _currentFileCancelToken;
+  Completer<void>? _stateChangeSignal;
 
   NearbyDevice? get localDevice => _localDevice;
   HttpTransferServer get httpServer => _httpServer;
@@ -327,6 +342,13 @@ class NearbyService {
       onTransferFailed?.call(fileId, error);
     };
 
+    _httpServer.onFileCancelled = ({
+      required String sessionId,
+      required String fileId,
+    }) {
+      onTransferCancelled?.call(fileId);
+    };
+
     _httpServer.onPortalEvent = (event) {
       onPortalEvent?.call(event);
     };
@@ -592,7 +614,20 @@ class NearbyService {
     }
   }
 
-  NearbyDevice? getDevice(String endpointId) => _knownDevices[endpointId];
+  NearbyDevice? getDevice(String endpointId) {
+    final directMatch = _knownDevices[endpointId];
+    if (directMatch != null) return directMatch;
+
+    final prefix = _hexPrefix12(endpointId);
+    if (prefix.isEmpty) return null;
+
+    for (final device in _knownDevices.values) {
+      if (_hexPrefix12(device.id) == prefix) {
+        return device;
+      }
+    }
+    return null;
+  }
 
   void addManualDevice(NearbyDevice device) {
     _knownDevices[device.id] = device;
@@ -602,14 +637,15 @@ class NearbyService {
   /// Request connection/handshake with a discovered target device.
   /// Automatically establishes a Direct Wi-Fi link if LAN IP is unavailable/unreachable.
   Future<bool> requestConnection(String deviceName, String endpointId) async {
-    final target = _knownDevices[endpointId];
+    final target = getDevice(endpointId);
     if (target == null) {
       debugPrint('[NearbyService] Unknown endpointId: $endpointId');
       return false;
     }
+    final resolvedId = target.id;
 
     try {
-      onConnectionInitiated?.call(endpointId, target.name);
+      onConnectionInitiated?.call(resolvedId, target.name);
 
       // 1. Try direct LAN ping first when a LAN IP is known
       if (target.hasLanIp && !target.isWifiDirect) {
@@ -623,9 +659,9 @@ class NearbyService {
             p2pGoIp: target.p2pGoIp,
             lastSeen: DateTime.now(),
           );
-          _knownDevices[endpointId] = updated;
+          _knownDevices[resolvedId] = updated;
           onDeviceFound?.call(updated);
-          onConnectionResult?.call(endpointId, true);
+          onConnectionResult?.call(resolvedId, true);
           return true;
         }
       }
@@ -638,6 +674,7 @@ class NearbyService {
           passphrase: target.p2pPassphrase,
           deviceAddress: target.p2pDeviceAddress,
           goIp: target.p2pGoIp,
+          port: target.port,
         );
         if (connectRes.success && connectRes.goIp != null) {
           NetworkInfoService.invalidateCache();
@@ -654,19 +691,26 @@ class NearbyService {
               connectionType: target.connectionType,
               lastSeen: DateTime.now(),
             );
-            _knownDevices[endpointId] = updated;
+            _knownDevices[resolvedId] = updated;
             onDeviceFound?.call(updated);
-            onConnectionResult?.call(endpointId, true);
+            onConnectionResult?.call(resolvedId, true);
             return true;
           }
+          await _directP2p.disconnectDirect();
         }
       }
 
-      onConnectionResult?.call(endpointId, false);
+      if (Platform.isAndroid && _isActiveDiscovering) {
+        unawaited(_directP2p.startWifiDirectDiscovery(isPassive: false));
+      }
+      onConnectionResult?.call(resolvedId, false);
       return false;
     } catch (e) {
       debugPrint('[NearbyService] requestConnection error: $e');
-      onConnectionResult?.call(endpointId, false);
+      if (Platform.isAndroid && _isActiveDiscovering) {
+        unawaited(_directP2p.startWifiDirectDiscovery(isPassive: false));
+      }
+      onConnectionResult?.call(resolvedId, false);
       return false;
     }
   }
@@ -702,6 +746,7 @@ class NearbyService {
         ssid: parsed.ssid,
         passphrase: parsed.passphrase,
         goIp: parsed.p2pIp,
+        port: parsed.port,
       );
       if (res.success) {
         final targetIp = res.goIp ?? parsed.p2pIp ?? '192.168.49.1';
@@ -720,6 +765,7 @@ class NearbyService {
           addManualDevice(enriched);
           return enriched;
         }
+        await _directP2p.disconnectDirect();
       }
     }
 
@@ -769,6 +815,79 @@ class NearbyService {
     );
   }
 
+  void _signalStateChange() {
+    final completer = _stateChangeSignal;
+    if (completer != null && !completer.isCompleted) {
+      completer.complete();
+    }
+    _stateChangeSignal = null;
+  }
+
+  Future<void> _waitForStateChange() {
+    final completer = _stateChangeSignal ??= Completer<void>();
+    return completer.future;
+  }
+
+  Future<void> cancelActiveBatch() async {
+    _sessionCancelled = true;
+    _batchPaused = false;
+    _pausedFileIds.clear();
+    _currentFileCancelToken?.cancel('Batch cancelled by user');
+    _signalStateChange();
+
+    final target = _activeOutgoingTarget;
+    final sessionId = _activeOutgoingSessionId;
+    if (target != null && sessionId != null) {
+      await _httpClient.cancelTransfer(target: target, sessionId: sessionId);
+    }
+  }
+
+  Future<void> cancelFileTransfer(String transferId) async {
+    _cancelledFileIds.add(transferId);
+    _pausedFileIds.remove(transferId);
+    if (_currentUploadingFileId == transferId) {
+      _currentFileCancelToken?.cancel('File cancelled by user');
+    }
+    _signalStateChange();
+    onTransferCancelled?.call(transferId);
+
+    final target = _activeOutgoingTarget;
+    final sessionId = _activeOutgoingSessionId;
+    if (target != null && sessionId != null) {
+      await _httpClient.cancelTransfer(
+        target: target,
+        sessionId: sessionId,
+        fileId: transferId,
+      );
+    }
+  }
+
+  void setBatchPaused(bool paused) {
+    _batchPaused = paused;
+    if (!paused) {
+      _pausedFileIds.clear();
+    }
+    _signalStateChange();
+  }
+
+  void setFilePaused(String transferId, bool paused) {
+    if (paused) {
+      _pausedFileIds.add(transferId);
+    } else {
+      if (_batchPaused) {
+        _batchPaused = false;
+        for (final id in _activeOutgoingFileIds) {
+          if (id != transferId && !_cancelledFileIds.contains(id)) {
+            _pausedFileIds.add(id);
+          }
+        }
+      }
+      _pausedFileIds.remove(transferId);
+    }
+    onTransferPausedChanged?.call(transferId, paused);
+    _signalStateChange();
+  }
+
   /// Uploads multiple files sequentially to the target device in a single session.
   Future<bool> sendFilesStream({
     required NearbyDevice target,
@@ -780,54 +899,154 @@ class NearbyService {
     }
 
     final sessionId = 'sess_${DateTime.now().millisecondsSinceEpoch}';
+    _activeOutgoingSessionId = sessionId;
+    _activeOutgoingTarget = target;
+    _activeOutgoingFileIds
+      ..clear()
+      ..addAll(transfers.map((t) => t.id));
+    _sessionCancelled = false;
+    _batchPaused = false;
+    _cancelledFileIds.clear();
+    _pausedFileIds.clear();
+    _currentUploadingFileId = null;
+    _currentFileCancelToken = null;
 
-    // 1. Prepare batch transfer
-    final prepared = await _httpClient.prepareTransfer(
-      target: target,
-      sender: _localDevice!,
-      sessionId: sessionId,
-      files: transfers,
-    );
-
-    if (!prepared) {
-      debugPrint('[NearbyService] Target declined or unreachable');
-      for (final t in transfers) {
-        onTransferFailed?.call(t.id, 'Target device declined or unreachable');
-      }
-      return false;
-    }
-
-    // 2. Stream each file
     bool allOk = true;
-    for (int i = 0; i < files.length; i++) {
-      final f = files[i];
-      final t = transfers[i];
-
-      onTransferProgress?.call(t.id, 0, t.fileSize, 0.0);
-
-      final ok = await _httpClient.uploadFile(
+    try {
+      // 1. Prepare batch transfer
+      final prepared = await _httpClient.prepareTransfer(
         target: target,
+        sender: _localDevice!,
         sessionId: sessionId,
-        fileTransfer: t,
-        file: f,
-        onProgress: (sentBytes, totalBytes, speed) {
-          onTransferProgress?.call(t.id, sentBytes, totalBytes, speed);
-        },
+        files: transfers,
       );
 
-      if (ok) {
-        onTransferCompleted?.call(t.id, f.path);
-      } else {
-        onTransferFailed?.call(t.id, 'Connection lost during transfer');
-        for (int j = i + 1; j < transfers.length; j++) {
-          onTransferFailed?.call(
-            transfers[j].id,
-            'Transfer cancelled after connection error',
-          );
+      if (_sessionCancelled) {
+        if (prepared) {
+          unawaited(_httpClient.cancelTransfer(target: target, sessionId: sessionId));
         }
-        allOk = false;
-        break;
+        for (final t in transfers) {
+          onTransferCancelled?.call(t.id);
+        }
+        return false;
       }
+
+      if (!prepared) {
+        debugPrint('[NearbyService] Target declined or unreachable');
+        for (final t in transfers) {
+          onTransferFailed?.call(t.id, 'Target device declined or unreachable');
+        }
+        return false;
+      }
+
+      // 2. Stream remaining non-paused, non-cancelled files
+      final remainingIndices = List<int>.generate(files.length, (i) => i);
+      while (remainingIndices.isNotEmpty) {
+        remainingIndices.removeWhere((idx) {
+          final id = transfers[idx].id;
+          if (_cancelledFileIds.contains(id)) {
+            _activeOutgoingFileIds.remove(id);
+            return true;
+          }
+          return false;
+        });
+
+        if (_sessionCancelled) {
+          for (final idx in remainingIndices) {
+            onTransferCancelled?.call(transfers[idx].id);
+          }
+          allOk = false;
+          break;
+        }
+
+        if (remainingIndices.isEmpty) break;
+
+        int? nextPosition;
+        if (!_batchPaused) {
+          for (int pos = 0; pos < remainingIndices.length; pos++) {
+            final t = transfers[remainingIndices[pos]];
+            if (!_pausedFileIds.contains(t.id)) {
+              nextPosition = pos;
+              break;
+            }
+          }
+        }
+
+        if (nextPosition == null) {
+          await _waitForStateChange();
+          continue;
+        }
+
+        final fileIdx = remainingIndices.removeAt(nextPosition);
+        final f = files[fileIdx];
+        final t = transfers[fileIdx];
+
+        if (_sessionCancelled || _cancelledFileIds.contains(t.id)) {
+          onTransferCancelled?.call(t.id);
+          _activeOutgoingFileIds.remove(t.id);
+          allOk = false;
+          continue;
+        }
+
+        final cancelToken = CancelToken();
+        _currentUploadingFileId = t.id;
+        _currentFileCancelToken = cancelToken;
+
+        onTransferProgress?.call(t.id, 0, t.fileSize, 0.0);
+
+        final ok = await _httpClient.uploadFile(
+          target: target,
+          sessionId: sessionId,
+          fileTransfer: t,
+          file: f,
+          cancelToken: cancelToken,
+          isPaused: () => _batchPaused || _pausedFileIds.contains(t.id),
+          waitWhilePaused: _waitForStateChange,
+          isCancelled: () => _sessionCancelled || _cancelledFileIds.contains(t.id),
+          onProgress: (sentBytes, totalBytes, speed) {
+            onTransferProgress?.call(t.id, sentBytes, totalBytes, speed);
+          },
+        );
+
+        _currentUploadingFileId = null;
+        _currentFileCancelToken = null;
+        _activeOutgoingFileIds.remove(t.id);
+
+        if (ok) {
+          onTransferCompleted?.call(t.id, f.path);
+        } else if (_sessionCancelled) {
+          onTransferCancelled?.call(t.id);
+          for (final idx in remainingIndices) {
+            onTransferCancelled?.call(transfers[idx].id);
+          }
+          allOk = false;
+          break;
+        } else if (_cancelledFileIds.contains(t.id)) {
+          onTransferCancelled?.call(t.id);
+          allOk = false;
+        } else {
+          onTransferFailed?.call(t.id, 'Connection lost during transfer');
+          for (final idx in remainingIndices) {
+            onTransferFailed?.call(
+              transfers[idx].id,
+              'Transfer cancelled after connection error',
+            );
+          }
+          allOk = false;
+          break;
+        }
+      }
+    } finally {
+      _activeOutgoingSessionId = null;
+      _activeOutgoingTarget = null;
+      _activeOutgoingFileIds.clear();
+      _sessionCancelled = false;
+      _batchPaused = false;
+      _cancelledFileIds.clear();
+      _pausedFileIds.clear();
+      _currentUploadingFileId = null;
+      _currentFileCancelToken = null;
+      _signalStateChange();
     }
 
     return allOk;

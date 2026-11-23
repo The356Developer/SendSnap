@@ -6,3 +6,5 @@ sendsnap_website/
 *.pem
 *.jks
 sendsnap-credentials-backup/
+dist/
+sendsnap/dist/

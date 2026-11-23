@@ -3,10 +3,10 @@
   <img src="sendsnap/assets/icon/app_icon.png" width="110" height="110" alt="SendSnap Logo" />
 
   <h1>SendSnap</h1>
-  <p><strong>Lightning-Fast, Offline Peer-to-Peer File Sharing for Android &amp; Windows</strong></p>
+  <p><strong>Lightning-Fast, Offline Peer-to-Peer File Sharing for Android, Windows &amp; Linux</strong></p>
 
   <p>
-    <a href="https://github.com/Youssef0356/SendSnap/releases/tag/v2.2.9"><img src="https://img.shields.io/badge/Version-2.2.9-2B50EC?style=flat-square" alt="Version 2.2.9" /></a>
+    <a href="https://github.com/Youssef0356/SendSnap/releases/tag/v2.2.10"><img src="https://img.shields.io/badge/Version-2.2.10-2B50EC?style=flat-square" alt="Version 2.2.10" /></a>
     <img src="https://img.shields.io/badge/Status-Active%20Development-E68A00?style=flat-square" alt="Status: Active Development" />
     <a href="https://flutter.dev"><img src="https://img.shields.io/badge/Flutter-3.x-02569B?style=flat-square&logo=flutter&logoColor=white" alt="Flutter" /></a>
     <a href="https://dart.dev"><img src="https://img.shields.io/badge/Dart-3.11%2B-0175C2?style=flat-square&logo=dart&logoColor=white" alt="Dart 3.11+" /></a>
@@ -20,6 +20,8 @@
 
   <p>
     <a href="https://youssef0356.github.io/sendsnap_website/downloads/sendsnap-windows-x64.zip"><img src="https://img.shields.io/badge/Windows_x64-Download-2B50EC?style=flat-square&logo=windows&logoColor=white" height="26" alt="Download for Windows x64" /></a>
+    &nbsp;
+    <a href="https://youssef0356.github.io/sendsnap_website/downloads/SendSnap-x86_64.AppImage"><img src="https://img.shields.io/badge/Linux_x64-AppImage-FCC624?style=flat-square&logo=linux&logoColor=black" height="26" alt="Download for Linux x64" /></a>
     &nbsp;
     <img src="https://img.shields.io/badge/Google_Play-Coming_Soon-6B7280?style=flat-square&logo=google-play&logoColor=white" height="26" alt="Google Play Coming Soon" />
     &nbsp;
@@ -76,11 +78,11 @@
 
 - **Gigabit Local Speeds**: Stream large batches of photos, 4K videos, APKs, archives, and documents at up to **100 MB/s** over local Wi-Fi, Wi-Fi Direct, or Personal Hotspot.
 - **Zero-Delay Multi-Layer Discovery**: Automatically finds nearby devices using UDP multicast/broadcast, subnet HTTP probing, Wi-Fi Direct / Local Hotspot pairing, and **BLE discovery beacons**, with instant **QR code** and **manual IP** fallback for restricted networks.
-- **True Cross-Platform Sharing**: Seamlessly transfer between **Android** and **Windows PC** (with Linux desktop packaging scripts included).
+- **True Cross-Platform Sharing**: Seamlessly transfer between **Android**, **Windows PC**, and **Linux** desktop.
 - **Handcrafted Sketch-Ink UI & Dark Mode**: Warm paper & Sumi-ink Light Mode and high-contrast Chalk-ink Dark Mode designed for clarity across phones and desktops.
-- **Interactive Drag-and-Drop & Multi-File Queue**: Drag files from your desktop or in-app tray onto nearby devices—either one by one or as a full batch—and inspect everything on the Windows two-pane completion screen with the built-in **Media Viewer**.
-- **Built-In File & Media Browser**: Browse Images, Videos, Audio, Documents, Apps, Archives, Recents, or Any File with instant search, plus native **Android Share Sheet** and **Windows Explorer / System Tray** integration.
-- **Experimental Bare-Hand Air Gestures**: Camera-assisted hand-grab gestures for touchless sharing sessions on supported Android and Windows devices.
+- **Interactive Drag-and-Drop & Multi-File Queue**: Drag files from your desktop or in-app tray onto nearby devices—either one by one or as a full batch—and inspect everything on the desktop completion screen with the built-in **Media Viewer**.
+- **Built-In File & Media Browser**: Browse Images, Videos, Audio, Documents, Apps, Archives, Recents, or Any File with instant search, plus native **Android Share Sheet** and **Desktop / System Tray** integration.
+- **Experimental Bare-Hand Air Gestures**: Camera-assisted hand-grab gestures for touchless sharing sessions on supported Android, Windows, and Linux devices.
 - **Multilingual & RTL Ready**: Full localization in **English**, **French**, **Arabic** (with automatic RTL layout mirroring & BiDi-safe filenames), and **Spanish**, switchable right from the home bar.
 - **100% Offline, Ad-Free & Private**: No trackers, no analytics SDKs, no cloud servers, and no account required. See [PRIVACY_POLICY.md](sendsnap/PRIVACY_POLICY.md).
 
@@ -93,7 +95,10 @@
 | **Android** | Google Play Store | *Coming Soon* (or [build APK from source](#building-from-source)) |
 | **Windows (64-bit)** | Portable `.zip` Archive | [Download `sendsnap-windows-x64.zip`](https://youssef0356.github.io/sendsnap_website/downloads/sendsnap-windows-x64.zip) |
 | **Windows (64-bit)** | Portable `.rar` Archive | [Download `sendsnap-windows-x64.rar`](https://youssef0356.github.io/sendsnap_website/downloads/sendsnap-windows-x64.rar) |
-| **All Releases** | Source & Tags (`v2.2.9`) | [GitHub Releases](https://github.com/Youssef0356/SendSnap/releases/tag/v2.2.9) |
+| **Linux (64-bit)** | Standalone `AppImage` | [Download `SendSnap-x86_64.AppImage`](https://youssef0356.github.io/sendsnap_website/downloads/SendSnap-x86_64.AppImage) |
+| **Linux (64-bit)** | Debian / Ubuntu `.deb` | [Download `sendsnap_2.2.9_amd64.deb`](https://youssef0356.github.io/sendsnap_website/downloads/sendsnap_2.2.9_amd64.deb) |
+| **Linux (64-bit)** | Portable `.tar.gz` Archive | [Download `sendsnap-linux-x64.tar.gz`](https://youssef0356.github.io/sendsnap_website/downloads/sendsnap-linux-x64.tar.gz) |
+| **All Releases** | Source & Tags (`v2.2.10`) | [GitHub Releases](https://github.com/Youssef0356/SendSnap/releases/tag/v2.2.10) |
 | **Release Portal** | Official Website | [youssef0356.github.io/sendsnap_website](https://youssef0356.github.io/sendsnap_website/) |
 
 ---
@@ -119,6 +124,7 @@ SendSnap runs completely on your local network with no external backend:
 - **Flutter SDK** (supporting Dart `^3.11.1`)
 - **Android Studio / Android SDK** (for Android builds, `minSdk 24+`)
 - **Visual Studio 2022** with *Desktop development with C++* (for Windows builds)
+- **Clang / CMake / GTK development headers** (for Linux builds)
 
 ### Setup & Run
 ```bash
@@ -129,17 +135,24 @@ flutter pub get
 # Run on Windows
 flutter run -d windows
 
+# Run on Linux
+flutter run -d linux
+
 # Run on Android device or emulator
 flutter run -d android
 ```
 
 ### Release Builds & Packaging
 ```bash
-# Android APK
+# Android APK & App Bundle
 flutter build apk --release
+flutter build appbundle --release
 
 # Windows Desktop executable (output: build/windows/x64/runner/Release/sendsnap.exe)
 flutter build windows --release
+
+# Linux Desktop executable (output: build/linux/x64/release/bundle/)
+flutter build linux --release
 ```
 For automated **Windows Installer (Inno Setup)** and **Linux (`AppImage` / `.deb`)** packaging scripts, see [sendsnap/packaging/README.md](sendsnap/packaging/README.md).
 

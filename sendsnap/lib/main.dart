@@ -156,6 +156,14 @@ class _SendSnapAppState extends State<SendSnapApp> {
       );
     };
 
+    devProv.nearbyService.onTransferCancelled = (transferId) {
+      transProv.markTransferCancelled(transferId: transferId);
+    };
+
+    devProv.nearbyService.onTransferPausedChanged = (transferId, paused) {
+      transProv.setTransferPaused(transferId: transferId, paused: paused);
+    };
+
     // Auto-navigate receiver to transfer screen once when an incoming batch starts
     transProv.onTransferStarted = () {
       debugPrint('[SendSnapApp] Transfer started — ensuring transfer screen is visible');

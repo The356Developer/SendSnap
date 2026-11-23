@@ -375,6 +375,7 @@ class DirectP2pService {
     String? passphrase,
     String? deviceAddress,
     String? goIp,
+    int port = 53318,
   }) async {
     if (!Platform.isAndroid) {
       return const DirectConnectResult(
@@ -390,6 +391,7 @@ class DirectP2pService {
           'passphrase': ?passphrase,
           'deviceAddress': ?deviceAddress,
           'goIp': ?goIp,
+          'port': port,
         },
       );
       final ok = (res?['success'] as bool?) ?? false;

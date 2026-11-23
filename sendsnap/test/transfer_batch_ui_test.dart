@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -16,6 +17,11 @@ class _FakeNearbyService extends NearbyService {
   List<FileTransfer> lastTransfers = const [];
   List<File> lastFiles = const [];
   NearbyDevice? lastTarget;
+  Completer<bool>? sendCompleter;
+  int cancelActiveBatchCalls = 0;
+  final List<String> cancelledFileIds = [];
+  final List<bool> batchPausedCalls = [];
+  final List<(String, bool)> filePausedCalls = [];
 
   @override
   Future<bool> sendFilesStream({
@@ -26,7 +32,30 @@ class _FakeNearbyService extends NearbyService {
     lastTarget = target;
     lastTransfers = List.from(transfers);
     lastFiles = List.from(files);
+    if (sendCompleter != null) {
+      return await sendCompleter!.future;
+    }
     return true;
+  }
+
+  @override
+  Future<void> cancelActiveBatch() async {
+    cancelActiveBatchCalls++;
+  }
+
+  @override
+  Future<void> cancelFileTransfer(String transferId) async {
+    cancelledFileIds.add(transferId);
+  }
+
+  @override
+  void setBatchPaused(bool paused) {
+    batchPausedCalls.add(paused);
+  }
+
+  @override
+  void setFilePaused(String transferId, bool paused) {
+    filePausedCalls.add((transferId, paused));
   }
 }
 
@@ -166,6 +195,90 @@ void main() {
         expect(batch[1].savedPath, isNull);
         expect(batch[1].filePath, fileB.path);
         expect(batch[1].localPath, fileB.path);
+      },
+    );
+
+    test(
+      'cancelFile, cancelAll, togglePauseFile, and togglePauseAll update state and delegate to NearbyService',
+      () async {
+        final tempDir = Directory.systemTemp.createTempSync('sendsnap_ctrl_test_');
+        addTearDown(() {
+          if (tempDir.existsSync()) tempDir.deleteSync(recursive: true);
+        });
+
+        final file1 = File('${tempDir.path}${Platform.pathSeparator}f1.txt')
+          ..writeAsStringSync('1111');
+        final file2 = File('${tempDir.path}${Platform.pathSeparator}f2.txt')
+          ..writeAsStringSync('2222');
+        final file3 = File('${tempDir.path}${Platform.pathSeparator}f3.txt')
+          ..writeAsStringSync('3333');
+
+        final provider = TransferProvider();
+        final completer = Completer<bool>();
+        final fakeService = _FakeNearbyService()..sendCompleter = completer;
+        final target = NearbyDevice(
+          id: 'recv-ctrl',
+          name: 'Phone',
+          ip: '192.168.1.77',
+          port: 53318,
+        );
+
+        final sendFuture = provider.sendFiles(
+          target,
+          [file1, file2, file3],
+          fakeService,
+        );
+        while (provider.currentBatchTransfers.length < 3) {
+          await Future<void>.delayed(const Duration(milliseconds: 5));
+        }
+
+        final ids = provider.currentBatchTransfers.map((t) => t.id).toList();
+        expect(ids.length, 3);
+        expect(provider.isBatchPaused, isFalse);
+        expect(provider.cancelledBatchCount, 0);
+
+        // Toggle per-file pause on file 2
+        provider.togglePauseFile(ids[1]);
+        expect(provider.currentBatchTransfers[1].status, TransferStatus.paused);
+        expect(provider.isBatchPaused, isFalse);
+        expect(fakeService.filePausedCalls, [(ids[1], true)]);
+
+        // Resume file 2
+        provider.togglePauseFile(ids[1]);
+        expect(provider.currentBatchTransfers[1].status, TransferStatus.pending);
+        expect(fakeService.filePausedCalls, [(ids[1], true), (ids[1], false)]);
+
+        // Cancel specific file (file 2)
+        await provider.cancelFile(ids[1]);
+        expect(provider.currentBatchTransfers[1].status, TransferStatus.cancelled);
+        expect(provider.cancelledBatchCount, 1);
+        expect(provider.hasActiveBatch, isTrue);
+        expect(fakeService.cancelledFileIds, [ids[1]]);
+
+        // Pause all remaining active files
+        provider.togglePauseAll();
+        expect(provider.isBatchPaused, isTrue);
+        expect(provider.currentBatchTransfers[0].status, TransferStatus.paused);
+        expect(provider.currentBatchTransfers[1].status, TransferStatus.cancelled);
+        expect(provider.currentBatchTransfers[2].status, TransferStatus.paused);
+        expect(fakeService.batchPausedCalls, [true]);
+
+        // Resume all remaining active files
+        provider.togglePauseAll();
+        expect(provider.isBatchPaused, isFalse);
+        expect(provider.currentBatchTransfers[0].status, TransferStatus.pending);
+        expect(provider.currentBatchTransfers[2].status, TransferStatus.pending);
+        expect(fakeService.batchPausedCalls, [true, false]);
+
+        // Cancel all remaining
+        await provider.cancelAll();
+        expect(provider.cancelledBatchCount, 3);
+        expect(provider.isBatchComplete, isTrue);
+        expect(provider.hasActiveBatch, isFalse);
+        expect(fakeService.cancelActiveBatchCalls, 1);
+
+        completer.complete(false);
+        await sendFuture;
       },
     );
   });
@@ -340,6 +453,86 @@ void main() {
         expect(find.text('document_3.pdf'), findsOneWidget);
         expect(find.text('document_4.pdf'), findsOneWidget);
         expect(find.text('CLOSE ALL & MAIN MENU'), findsOneWidget);
+      },
+    );
+
+    Future<TransferProvider> buildActiveOutgoingProvider(
+      _FakeNearbyService fake,
+    ) async {
+      final provider = TransferProvider();
+      final tempDir = Directory.systemTemp.createTempSync('sendsnap_active_ui_');
+      final ioFiles = List.generate(3, (i) {
+        return File(
+          '${tempDir.path}${Platform.pathSeparator}video_${i + 1}.mp4',
+        )..writeAsStringSync('Video payload $i');
+      });
+      final target = NearbyDevice(
+        id: 'peer-active',
+        name: 'Galaxy S24',
+        ip: '192.168.1.60',
+        port: 53318,
+      );
+      unawaited(provider.sendFiles(target, ioFiles, fake));
+      while (provider.currentBatchTransfers.length < 3) {
+        await Future<void>.delayed(const Duration(milliseconds: 5));
+      }
+      tempDir.deleteSync(recursive: true);
+      return provider;
+    }
+
+    testWidgets(
+      'Active outgoing batch shows PAUSE, CANCEL ALL, per-file pause/cancel buttons cleanly at Mobile 390x844 and Desktop 1000x680',
+      (tester) async {
+        for (final size in [const Size(390, 844), const Size(1000, 680)]) {
+          tester.view.physicalSize = size;
+          tester.view.devicePixelRatio = 1.0;
+
+          final completer = Completer<bool>();
+          final fake = _FakeNearbyService()..sendCompleter = completer;
+          final provider = (await tester.runAsync(
+            () => buildActiveOutgoingProvider(fake),
+          ))!;
+
+          await tester.pumpWidget(
+            ChangeNotifierProvider<TransferProvider>.value(
+              value: provider,
+              child: MaterialApp(
+                home: TransferScreen(onReturnHome: () {}),
+              ),
+            ),
+          );
+          await tester.pump();
+
+          expect(tester.takeException(), isNull);
+          expect(find.text('PAUSE'), findsOneWidget);
+          expect(find.text('CANCEL ALL'), findsOneWidget);
+          expect(find.text('MINIMIZE'), findsOneWidget);
+          expect(find.byTooltip('Pause file'), findsNWidgets(3));
+          expect(find.byTooltip('Cancel file'), findsNWidgets(3));
+
+          // Tap Pause All -> switches to RESUME
+          await tester.tap(find.text('PAUSE'));
+          await tester.pump();
+          expect(tester.takeException(), isNull);
+          expect(find.text('RESUME'), findsOneWidget);
+          expect(find.text('Transfer Paused'), findsWidgets);
+
+          // Tap Cancel file on first entry
+          await tester.tap(find.byTooltip('Cancel file').first);
+          await tester.pump();
+          expect(tester.takeException(), isNull);
+          expect(provider.cancelledBatchCount, 1);
+
+          // Tap CANCEL ALL
+          await tester.tap(find.text('CANCEL ALL'));
+          await tester.pump();
+          expect(tester.takeException(), isNull);
+          expect(provider.isBatchComplete, isTrue);
+          expect(find.text('Transfer Cancelled'), findsOneWidget);
+
+          completer.complete(false);
+        }
+        addTearDown(tester.view.reset);
       },
     );
   });

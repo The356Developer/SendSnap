@@ -161,7 +161,9 @@ class _TransferScreenState extends State<TransferScreen> {
                 _getAppBarTitle(
                   batch: batch,
                   isComplete: isBatchComplete,
+                  isPaused: transProv.isBatchPaused,
                   failedCount: failedCount,
+                  cancelledCount: transProv.cancelledBatchCount,
                   isIncoming: isIncoming,
                 ),
                 style: TextStyle(
@@ -480,8 +482,10 @@ class _TransferScreenState extends State<TransferScreen> {
                                     const SizedBox(height: 10),
                                 itemBuilder: (context, index) => _buildFileRow(
                                   context,
+                                  transProv: transProv,
                                   file: batch[index],
                                   completedFiles: completedFiles,
+                                  isIncoming: isIncoming,
                                 ),
                               ),
                       ),
@@ -620,8 +624,10 @@ class _TransferScreenState extends State<TransferScreen> {
                       separatorBuilder: (_, _) => const SizedBox(height: 10),
                       itemBuilder: (context, index) => _buildFileRow(
                         context,
+                        transProv: transProv,
                         file: batch[index],
                         completedFiles: completedFiles,
+                        isIncoming: isIncoming,
                       ),
                     ),
                   ],
@@ -659,17 +665,27 @@ class _TransferScreenState extends State<TransferScreen> {
     required double percentFontSize,
     required double iconSize,
   }) {
+    final bool allCancelled = isComplete &&
+        completedCount == 0 &&
+        transProv.cancelledBatchCount == transProv.currentBatchTransfers.length;
     final bool allFailed = isComplete && completedCount == 0 && failedCount > 0;
     final bool partialFailure = isComplete && failedCount > 0 && completedCount > 0;
+    final bool isPaused = !isComplete && transProv.isBatchPaused;
 
     Color progressColor = AppColors.primary;
     IconData centerIcon = Icons.sync_rounded;
-    if (allFailed) {
+    if (allCancelled) {
+      progressColor = AppColors.warning;
+      centerIcon = Icons.cancel_rounded;
+    } else if (allFailed) {
       progressColor = AppColors.error;
       centerIcon = Icons.error_rounded;
     } else if (partialFailure) {
       progressColor = AppColors.warning;
       centerIcon = Icons.warning_rounded;
+    } else if (isPaused) {
+      progressColor = AppColors.warning;
+      centerIcon = Icons.pause_circle_rounded;
     } else if (isComplete) {
       progressColor = AppColors.success;
       centerIcon = Icons.check_circle_rounded;
@@ -742,6 +758,17 @@ class _TransferScreenState extends State<TransferScreen> {
   }) {
     final peer = transProv.peerName;
     if (!isComplete) {
+      if (transProv.isBatchPaused) {
+        return const Text(
+          'Transfer paused',
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            color: AppColors.warning,
+            fontSize: 13,
+            fontWeight: FontWeight.w700,
+          ),
+        );
+      }
       final speed = transProv.currentBatchSpeed;
       if (speed > 0) {
         final formatted = speed < 1024
@@ -801,11 +828,15 @@ class _TransferScreenState extends State<TransferScreen> {
     }
 
     if (failedCount > 0 && completedCount == 0) {
-      return const Text(
-        'Transfer failed. Check connection and try again.',
+      final allCancelled =
+          transProv.cancelledBatchCount == transProv.currentBatchTransfers.length;
+      return Text(
+        allCancelled
+            ? 'Transfer was cancelled.'
+            : 'Transfer failed. Check connection and try again.',
         textAlign: TextAlign.center,
         style: TextStyle(
-          color: AppColors.error,
+          color: allCancelled ? AppColors.warning : AppColors.error,
           fontSize: 13,
           fontWeight: FontWeight.w600,
         ),
@@ -907,30 +938,132 @@ class _TransferScreenState extends State<TransferScreen> {
     required int failedCount,
   }) {
     if (!isBatchComplete) {
-      return SizedBox(
-        width: double.infinity,
-        child: BouncingCard(
-          onTap: () => Navigator.of(context).pop(),
-          child: Container(
-            height: 48,
-            decoration: BoxDecoration(
-              color: AppColors.surfaceOf(context),
-              borderRadius: BorderRadius.circular(18),
-              border: Border.all(color: AppColors.inkOf(context), width: 1.6),
+      final isPaused = transProv.isBatchPaused;
+      return Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (!isIncoming) ...[
+            Row(
+              children: [
+                Expanded(
+                  child: BouncingCard(
+                    onTap: transProv.togglePauseAll,
+                    child: Container(
+                      height: 48,
+                      padding: const EdgeInsets.symmetric(horizontal: 10),
+                      decoration: BoxDecoration(
+                        color: (isPaused ? AppColors.primary : AppColors.warning)
+                            .withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(18),
+                        border: Border.all(
+                          color: isPaused ? AppColors.primary : AppColors.warning,
+                          width: 1.5,
+                        ),
+                      ),
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              isPaused
+                                  ? Icons.play_arrow_rounded
+                                  : Icons.pause_rounded,
+                              size: 19,
+                              color: isPaused
+                                  ? AppColors.primary
+                                  : AppColors.warning,
+                            ),
+                            const SizedBox(width: 5),
+                            Text(
+                              isPaused ? 'RESUME' : 'PAUSE',
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w800,
+                                letterSpacing: 0.4,
+                                color: isPaused
+                                    ? AppColors.primary
+                                    : AppColors.warning,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: BouncingCard(
+                    onTap: () => transProv.cancelAll(),
+                    child: Container(
+                      height: 48,
+                      padding: const EdgeInsets.symmetric(horizontal: 10),
+                      decoration: BoxDecoration(
+                        color: AppColors.error.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(18),
+                        border: Border.all(
+                          color: AppColors.error,
+                          width: 1.5,
+                        ),
+                      ),
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            const Icon(
+                              Icons.close_rounded,
+                              size: 19,
+                              color: AppColors.error,
+                            ),
+                            const SizedBox(width: 5),
+                            Text(
+                              batch.length > 1 ? 'CANCEL ALL' : 'CANCEL',
+                              style: const TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w800,
+                                letterSpacing: 0.4,
+                                color: AppColors.error,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ),
-            child: Center(
-              child: Text(
-                'MINIMIZE',
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 0.4,
-                  color: AppColors.textPrimaryOf(context),
+            const SizedBox(height: 10),
+          ],
+          SizedBox(
+            width: double.infinity,
+            child: BouncingCard(
+              onTap: () => Navigator.of(context).pop(),
+              child: Container(
+                height: 48,
+                decoration: BoxDecoration(
+                  color: AppColors.surfaceOf(context),
+                  borderRadius: BorderRadius.circular(18),
+                  border: Border.all(color: AppColors.inkOf(context), width: 1.6),
+                ),
+                child: Center(
+                  child: Text(
+                    'MINIMIZE',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 0.4,
+                      color: AppColors.textPrimaryOf(context),
+                    ),
+                  ),
                 ),
               ),
             ),
           ),
-        ),
+        ],
       );
     }
 
@@ -1294,13 +1427,17 @@ class _TransferScreenState extends State<TransferScreen> {
 
   Widget _buildFileRow(
     BuildContext context, {
+    required TransferProvider transProv,
     required FileTransfer file,
     required List<FileTransfer> completedFiles,
+    required bool isIncoming,
   }) {
     final isCompleted = file.status == TransferStatus.completed;
     final isInProgress = file.status == TransferStatus.inProgress;
-    final isFailed = file.status == TransferStatus.failed ||
-        file.status == TransferStatus.cancelled;
+    final isPaused = file.status == TransferStatus.paused;
+    final isPending = file.status == TransferStatus.pending;
+    final isCancelled = file.status == TransferStatus.cancelled;
+    final isFailed = file.status == TransferStatus.failed;
 
     final localPath = file.localPath;
     final isGalleryCapable = localPath != null && _isGalleryImage(localPath);
@@ -1315,12 +1452,29 @@ class _TransferScreenState extends State<TransferScreen> {
       final pct = (file.progress * 100).toInt();
       statusText = file.speed > 0 ? '$pct% • ${file.formattedSpeed}' : '$pct%';
       statusColor = AppColors.primary;
+    } else if (isPaused) {
+      final pct = (file.progress * 100).toInt();
+      statusText = file.transferredBytes > 0 ? 'Paused • $pct%' : 'Paused';
+      statusColor = AppColors.warning;
+    } else if (isCancelled) {
+      statusText = 'Cancelled';
+      statusColor = AppColors.textSecondaryOf(context);
     } else if (isFailed) {
       statusText = file.errorMessage ?? 'Failed';
       statusColor = AppColors.error;
     } else {
       statusText = 'Waiting...';
     }
+
+    final showProgressBar =
+        isInProgress || (isPaused && file.transferredBytes > 0);
+    final borderColor = isInProgress
+        ? AppColors.primary.withValues(alpha: 0.5)
+        : isPaused
+            ? AppColors.warning.withValues(alpha: 0.5)
+            : isFailed
+                ? AppColors.error.withValues(alpha: 0.45)
+                : AppColors.subtleBorderOf(context);
 
     return Material(
       color: Colors.transparent,
@@ -1332,15 +1486,10 @@ class _TransferScreenState extends State<TransferScreen> {
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
           decoration: BoxDecoration(
-            color: AppColors.surfaceOf(context).withValues(alpha: isCompleted ? 0.95 : 0.78),
+            color: AppColors.surfaceOf(context)
+                .withValues(alpha: isCompleted ? 0.95 : 0.78),
             borderRadius: BorderRadius.circular(18),
-            border: Border.all(
-              color: isInProgress
-                  ? AppColors.primary.withValues(alpha: 0.5)
-                  : isFailed
-                      ? AppColors.error.withValues(alpha: 0.45)
-                      : AppColors.subtleBorderOf(context),
-            ),
+            border: Border.all(color: borderColor),
           ),
           child: Row(
             children: [
@@ -1393,17 +1542,19 @@ class _TransferScreenState extends State<TransferScreen> {
                         softWrap: false,
                       ),
                     ),
-                    if (isInProgress) ...[
+                    if (showProgressBar) ...[
                       const SizedBox(height: 6),
                       ClipRRect(
                         borderRadius: BorderRadius.circular(4),
                         child: LinearProgressIndicator(
                           value: file.progress,
                           minHeight: 5,
-                          backgroundColor:
-                              AppColors.primary.withValues(alpha: 0.12),
-                          valueColor: const AlwaysStoppedAnimation<Color>(
-                            AppColors.primary,
+                          backgroundColor: (isPaused
+                                  ? AppColors.warning
+                                  : AppColors.primary)
+                              .withValues(alpha: 0.14),
+                          valueColor: AlwaysStoppedAnimation<Color>(
+                            isPaused ? AppColors.warning : AppColors.primary,
                           ),
                         ),
                       ),
@@ -1458,6 +1609,31 @@ class _TransferScreenState extends State<TransferScreen> {
                   visualDensity: VisualDensity.compact,
                   onPressed: () => _showInFolder(context, file),
                 ),
+              ] else if (!isIncoming && (isInProgress || isPaused || isPending)) ...[
+                IconButton(
+                  tooltip: isPaused ? 'Resume file' : 'Pause file',
+                  icon: Icon(
+                    isPaused ? Icons.play_arrow_rounded : Icons.pause_rounded,
+                    color: isPaused ? AppColors.warning : AppColors.primary,
+                    size: 19,
+                  ),
+                  constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                  padding: const EdgeInsets.all(4),
+                  visualDensity: VisualDensity.compact,
+                  onPressed: () => transProv.togglePauseFile(file.id),
+                ),
+                IconButton(
+                  tooltip: 'Cancel file',
+                  icon: const Icon(
+                    Icons.close_rounded,
+                    color: AppColors.error,
+                    size: 19,
+                  ),
+                  constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                  padding: const EdgeInsets.all(4),
+                  visualDensity: VisualDensity.compact,
+                  onPressed: () => transProv.cancelFile(file.id),
+                ),
               ] else if (isInProgress)
                 Container(
                   padding:
@@ -1473,6 +1649,32 @@ class _TransferScreenState extends State<TransferScreen> {
                       fontWeight: FontWeight.w800,
                       color: AppColors.primary,
                     ),
+                  ),
+                )
+              else if (isPaused)
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                  decoration: BoxDecoration(
+                    color: AppColors.warning.withValues(alpha: 0.14),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Text(
+                    'Paused',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.warning,
+                    ),
+                  ),
+                )
+              else if (isCancelled)
+                Padding(
+                  padding: const EdgeInsets.all(6),
+                  child: Icon(
+                    Icons.cancel_outlined,
+                    color: AppColors.textSecondaryOf(context),
+                    size: 20,
                   ),
                 )
               else if (isFailed)
@@ -1546,11 +1748,17 @@ class _TransferScreenState extends State<TransferScreen> {
   String _getAppBarTitle({
     required List<FileTransfer> batch,
     required bool isComplete,
+    required bool isPaused,
     required int failedCount,
+    required int cancelledCount,
     required bool isIncoming,
   }) {
     if (!isComplete) {
+      if (isPaused) return 'Transfer Paused';
       return isIncoming ? 'Receiving Files...' : 'Sending Files...';
+    }
+    if (cancelledCount == batch.length) {
+      return 'Transfer Cancelled';
     }
     if (failedCount == batch.length) {
       return 'Transfer Failed';
@@ -1567,6 +1775,9 @@ class _TransferScreenState extends State<TransferScreen> {
     required int failedCount,
   }) {
     if (!isComplete) {
+      if (transProv.isBatchPaused) {
+        return batch.length == 1 ? batch.first.fileName : 'Transfer Paused';
+      }
       if (batch.length == 1) {
         return batch.first.fileName;
       }
@@ -1575,6 +1786,11 @@ class _TransferScreenState extends State<TransferScreen> {
       return '${isIncoming ? 'Receiving' : 'Sending'} $currentIndex of ${batch.length}...';
     }
 
+    if (transProv.cancelledBatchCount == batch.length) {
+      return batch.length > 1
+          ? '${batch.length} Files Cancelled'
+          : 'Transfer Cancelled';
+    }
     if (failedCount == batch.length) {
       return batch.length > 1
           ? '$failedCount Files Failed'

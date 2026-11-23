@@ -1,6 +1,6 @@
 import '../services/bidi_helper.dart';
 
-enum TransferStatus { pending, inProgress, completed, failed, cancelled }
+enum TransferStatus { pending, inProgress, completed, failed, cancelled, paused }
 
 class FileTransfer {
   final String id;

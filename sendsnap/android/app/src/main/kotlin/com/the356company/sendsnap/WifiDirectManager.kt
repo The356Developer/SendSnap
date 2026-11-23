@@ -29,7 +29,9 @@ import android.provider.Settings
 import android.util.Log
 import androidx.core.content.ContextCompat
 import java.net.Inet4Address
+import java.net.InetSocketAddress
 import java.net.NetworkInterface
+import java.net.Socket
 import kotlin.random.Random
 
 /**
@@ -125,7 +127,13 @@ class WifiDirectManager(private val context: Context) {
                             lastNotifiedWifiState = true
                             mainHandler.post { onWifiStateChanged?.invoke(true) }
                         }
-                        if (wantsDiscovery && !isAdvertising && !isConnecting) {
+                        if (isAdvertising && activeSsid == null && activeDeviceId.isNotEmpty()) {
+                            mainHandler.postDelayed({
+                                if (isAdvertising && activeSsid == null && activeDeviceId.isNotEmpty() && isWifiEnabled()) {
+                                    startAdvertising(activeDeviceId, activeDeviceName, activePort, activeAirToken) { _, _ -> }
+                                }
+                            }, 400L)
+                        } else if (wantsDiscovery && !isAdvertising && !isConnecting) {
                             mainHandler.postDelayed({
                                 if (wantsDiscovery && !isAdvertising && !isConnecting && isWifiEnabled()) {
                                     startDiscovery(isPassiveDiscovery)
@@ -987,6 +995,7 @@ class WifiDirectManager(private val context: Context) {
         passphrase: String?,
         deviceAddress: String?,
         goIp: String?,
+        port: Int = 53318,
         onResult: (Boolean, String?, String?) -> Unit
     ) {
         if (!isWifiEnabled()) {
@@ -994,9 +1003,20 @@ class WifiDirectManager(private val context: Context) {
             return
         }
 
-        // Fast reuse if already linked to this exact Direct Wi-Fi network
+        // Fast reuse if already linked to this exact Direct Wi-Fi network and still routable
         if (!ssid.isNullOrEmpty() && ssid == connectedSsid && !connectedGoIp.isNullOrEmpty()) {
-            onResult(true, connectedGoIp, null)
+            val cachedIp = connectedGoIp!!
+            verifyTcpReachable(cachedIp, port, attempts = 1, connectTimeoutMs = 600) { reachable ->
+                if (reachable) {
+                    onResult(true, cachedIp, null)
+                } else {
+                    Log.w(TAG, "Cached direct link $cachedIp:$port unreachable; reconnecting")
+                    connectedSsid = null
+                    connectedGoIp = null
+                    unregisterSpecifierNetwork()
+                    connectToPeer(ssid, passphrase, deviceAddress, goIp, port, onResult)
+                }
+            }
             return
         }
 
@@ -1019,6 +1039,27 @@ class WifiDirectManager(private val context: Context) {
             }
         }
 
+        fun fallbackToSpecifier(
+            targetSsid: String,
+            targetPass: String,
+            fallbackIp: String
+        ) {
+            val mgr = p2pManager
+            val ch = p2pChannel
+            if (mgr != null && ch != null) {
+                try {
+                    mgr.cancelConnect(ch, null)
+                    mgr.removeGroup(ch, null)
+                } catch (_: Exception) {}
+            }
+            mainHandler.postDelayed({
+                if (finished) return@postDelayed
+                connectViaWifiSpecifier(targetSsid, targetPass, fallbackIp) { specOk, specIp, specErr ->
+                    complete(specOk, specIp, specErr)
+                }
+            }, 250L)
+        }
+
         val hasValidDirectCreds = !ssid.isNullOrEmpty() &&
             !passphrase.isNullOrEmpty() &&
             DIRECT_SSID_REGEX.matches(ssid) &&
@@ -1039,12 +1080,26 @@ class WifiDirectManager(private val context: Context) {
                 goIp ?: DEFAULT_GO_IP
             ) { ok, resolvedIp ->
                 if (ok && !resolvedIp.isNullOrEmpty()) {
-                    complete(true, resolvedIp, null)
+                    verifyTcpReachable(
+                        resolvedIp,
+                        port,
+                        attempts = 3,
+                        connectTimeoutMs = 900,
+                        retryDelayMs = 350L
+                    ) { reachable ->
+                        if (reachable) {
+                            complete(true, resolvedIp, null)
+                        } else {
+                            Log.w(
+                                TAG,
+                                "P2P L2 group formed ($resolvedIp:$port) but not routable; falling back to WifiNetworkSpecifier"
+                            )
+                            fallbackToSpecifier(ssid, passphrase, goIp ?: DEFAULT_GO_IP)
+                        }
+                    }
                 } else {
                     // Path 2 fallback: WifiNetworkSpecifier (handles LOHS & OEM P2P quirks)
-                    connectViaWifiSpecifier(ssid, passphrase, goIp ?: DEFAULT_GO_IP) { specOk, specIp, specErr ->
-                        complete(specOk, specIp, specErr)
-                    }
+                    fallbackToSpecifier(ssid, passphrase, goIp ?: DEFAULT_GO_IP)
                 }
             }
             return
@@ -1118,7 +1173,7 @@ class WifiDirectManager(private val context: Context) {
             .enablePersistentMode(false)
             .build()
 
-        mainHandler.postDelayed(timeoutRunnable, 9_000L)
+        mainHandler.postDelayed(timeoutRunnable, 6_000L)
         manager.connect(channel, config, object : WifiP2pManager.ActionListener {
             override fun onSuccess() {
                 Log.d(TAG, "P2P config connect initiated for $ssid")
@@ -1182,7 +1237,6 @@ class WifiDirectManager(private val context: Context) {
         var done = false
         val callback = object : ConnectivityManager.NetworkCallback() {
             override fun onAvailable(network: Network) {
-                val resolvedIp = resolveGatewayIp(cm, network) ?: fallbackIp
                 mainHandler.post {
                     if (done) return@post
                     done = true
@@ -1192,6 +1246,7 @@ class WifiDirectManager(private val context: Context) {
                     } catch (e: Exception) {
                         Log.w(TAG, "bindProcessToNetwork warning: ${e.message}")
                     }
+                    val resolvedIp = resolveGatewayIp(cm, network) ?: fallbackIp
                     Log.d(TAG, "WifiNetworkSpecifier connected to $ssid -> gateway=$resolvedIp")
                     onDone(true, resolvedIp, null)
                 }
@@ -1223,24 +1278,89 @@ class WifiDirectManager(private val context: Context) {
 
         activeNetworkCallback = callback
         try {
-            cm.requestNetwork(request, callback, 15_000)
+            cm.requestNetwork(request, callback, 35_000)
         } catch (e: Exception) {
             activeNetworkCallback = null
             onDone(false, null, e.message)
         }
     }
 
+    private fun verifyTcpReachable(
+        ip: String,
+        port: Int,
+        attempts: Int = 3,
+        connectTimeoutMs: Int = 900,
+        retryDelayMs: Long = 350L,
+        onResult: (Boolean) -> Unit
+    ) {
+        if (ip.isBlank() || port <= 0) {
+            mainHandler.post { onResult(false) }
+            return
+        }
+        Thread {
+            var reachable = false
+            for (attempt in 0 until attempts) {
+                var socket: Socket? = null
+                try {
+                    socket = Socket()
+                    socket.connect(InetSocketAddress(ip, port), connectTimeoutMs)
+                    reachable = true
+                    break
+                } catch (_: Exception) {
+                    // L2 interface not yet routable or server unreachable
+                } finally {
+                    try {
+                        socket?.close()
+                    } catch (_: Exception) {}
+                }
+                if (attempt < attempts - 1) {
+                    try {
+                        Thread.sleep(retryDelayMs)
+                    } catch (_: InterruptedException) {
+                        break
+                    }
+                }
+            }
+            mainHandler.post { onResult(reachable) }
+        }.start()
+    }
+
     private fun resolveGatewayIp(cm: ConnectivityManager, network: Network): String? {
         try {
             val props = cm.getLinkProperties(network) ?: return null
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                val dhcp = props.dhcpServerAddress
+                if (dhcp is Inet4Address && !dhcp.isAnyLocalAddress && !dhcp.isLoopbackAddress) {
+                    return dhcp.hostAddress
+                }
+            }
             for (route in props.routes) {
                 val gw = route.gateway
                 if (gw is Inet4Address && !gw.isAnyLocalAddress && !gw.isLoopbackAddress) {
                     return gw.hostAddress
                 }
             }
+            for (dns in props.dnsServers) {
+                if (dns is Inet4Address &&
+                    !dns.isAnyLocalAddress &&
+                    !dns.isLoopbackAddress &&
+                    isPrivateRfc1918(dns)
+                ) {
+                    return dns.hostAddress
+                }
+            }
         } catch (_: Exception) {}
         return null
+    }
+
+    private fun isPrivateRfc1918(addr: Inet4Address): Boolean {
+        val bytes = addr.address
+        if (bytes.size != 4) return false
+        val first = bytes[0].toInt() and 0xFF
+        val second = bytes[1].toInt() and 0xFF
+        return first == 10 ||
+            (first == 172 && second in 16..31) ||
+            (first == 192 && second == 168)
     }
 
     @SuppressLint("MissingPermission")
