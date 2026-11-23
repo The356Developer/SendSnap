@@ -32,8 +32,8 @@
 
 </div>
 
-> [!NOTE]
-> **Active Development:** SendSnap is still under active development. Features, UI, and protocols are actively evolving, and the **Google Play** release for Android is **coming soon**. In the meantime, you can try the Windows build or build the Android APK directly from source.
+> [!CAUTION]
+> **Early Development Phase:** SendSnap is currently in an early development phase and may still contain bugs, rough edges, or unfinished features. We are working hard to stabilize, polish, and open-source the project. The **Google Play** release for Android is **coming soon** — in the meantime, you can try the Windows/Linux builds or build the Android APK from source, and feedback or bug reports are always welcome!
 
 ---
 
@@ -41,21 +41,31 @@
 
 <table>
   <tr>
-    <td align="center" width="25%">
-      <img src="sendsnap/assets/Marketing/Updated/1.png" alt="Home Screen" />
-      <br /><sub><b>One-Tap Send &amp; Receive</b></sub>
+    <td align="center" width="33%">
+      <img src="sendsnap/assets/Marketing/Updated/1.jpg" alt="Grab Files In Mid-Air" />
+      <br /><sub><b>1. Grab Files in Mid-Air</b></sub>
     </td>
-    <td align="center" width="25%">
-      <img src="sendsnap/assets/Marketing/Updated/3.png" alt="Instant Nearby Discovery" />
-      <br /><sub><b>Instant Nearby Radar</b></sub>
+    <td align="center" width="33%">
+      <img src="sendsnap/assets/Marketing/Updated/2.jpg" alt="Air Grab and Drop" />
+      <br /><sub><b>2. Air Grab &amp; Drop</b></sub>
     </td>
-    <td align="center" width="25%">
-      <img src="sendsnap/assets/Marketing/Updated/4.png" alt="Built-In File Browser" />
-      <br /><sub><b>Built-In File &amp; Media Browser</b></sub>
+    <td align="center" width="33%">
+      <img src="sendsnap/assets/Marketing/Updated/3.jpg" alt="Drop to Any Device" />
+      <br /><sub><b>3. Drop to Any Device</b></sub>
     </td>
-    <td align="center" width="25%">
-      <img src="sendsnap/assets/Marketing/Updated/2.png" alt="Manage Received Files" />
-      <br /><sub><b>Manage Received Files</b></sub>
+  </tr>
+  <tr>
+    <td align="center" width="33%">
+      <img src="sendsnap/assets/Marketing/Updated/4.jpg" alt="Drag Across Screens" />
+      <br /><sub><b>4. Drag Across Screens</b></sub>
+    </td>
+    <td align="center" width="33%">
+      <img src="sendsnap/assets/Marketing/Updated/5.jpg" alt="Phone to PC Instant Sync" />
+      <br /><sub><b>5. Phone to PC Instant Sync</b></sub>
+    </td>
+    <td align="center" width="33%">
+      <img src="sendsnap/assets/Marketing/Updated/6.jpg" alt="Super Fast 100 MB/s Transfer" />
+      <br /><sub><b>6. Super Fast 100 MB/s Transfer</b></sub>
     </td>
   </tr>
 </table>
