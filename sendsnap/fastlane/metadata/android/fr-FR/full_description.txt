@@ -1,0 +1,24 @@
+Envoyez des fichiers d'Android vers un PC, une tablette ou un autre téléphone sans Internet — jusqu'à 100 Mo/s et zéro publicité.
+
+Vous cherchez une application de transfert Wi-Fi rapide et sans publicité, ou une alternative hors ligne à AirDrop et Quick Share pour Android, Windows et Linux ? SendSnap vous permet de transférer photos, vidéos 4K, APK, documents et dossiers complets sans fil via votre Wi-Fi local ou point d'accès mobile — sans câble USB, sans envoi dans le cloud et sans limite de taille.
+
+Transférez vos fichiers en quelques secondes — 3 façons de partager :
+• Air Grab & Drop (transfert par geste de la main) : Fermez la main pour saisir un fichier sur l'écran de votre téléphone et ouvrez-la pour le déposer directement sur votre PC ou tablette.
+• Glisser-déposer bord à bord : Faites glisser vos fichiers au-delà du bord de l'écran directement vers un appareil connecté à proximité.
+• Transfert par toucher, radar et code QR : Détectez automatiquement les appareils sur votre réseau ou scannez un code QR pour un appairage pair-à-pair instantané.
+
+Transfert de fichiers Android vers PC Windows et Linux :
+• Envoyez de grandes vidéos, photos, PDF, musiques, archives ZIP et applications installées entre Android et PC Windows / Linux.
+• Faites un clic droit sur n'importe quel fichier dans l'Explorateur Windows (« Send with SendSnap ») pour l'envoyer directement sur votre téléphone.
+• Transférez des fichiers entre sous-réseaux via IP directe ou point d'accès local sans connexion Internet.
+
+Pourquoi choisir SendSnap ?
+• Vitesse Wi-Fi locale de 100 Mo/s : Jusqu'à 200 fois plus rapide que le Bluetooth pour les vidéos 4K volumineuses et les séries de photos.
+• 100 % hors ligne et privé : Transfert pair-à-pair sur réseau local — aucun serveur, aucune connexion à un compte et aucun suivi.
+• Zéro pub et Open Source : Interface épurée et légère avec lecteur multimédia intégré et historique des transferts récents.
+• Prise en charge multilingue : English, Français, العربية, Español, et plus encore.
+
+Ce que vous pouvez envoyer :
+Photos, vidéos 4K, musiques, applications APK, documents, PDF et dossiers complets en qualité d'origine préservée — sans compression.
+
+Open source sur GitHub : https://github.com/Youssef0356/SendSnap

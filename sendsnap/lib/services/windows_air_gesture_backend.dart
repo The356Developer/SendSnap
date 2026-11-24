@@ -113,6 +113,12 @@ class WindowsAirGestureBackend {
       if (_isDisposed || token != _sessionToken) return false;
 
       openedCapture = await _openCapture();
+      if (openedCapture == null) {
+        // DirectShow/V4L2 may still be releasing the device after a recent stop/probe.
+        await Future<void>.delayed(const Duration(milliseconds: 250));
+        if (_isDisposed || token != _sessionToken) return false;
+        openedCapture = await _openCapture();
+      }
       if (openedCapture == null || !openedCapture.isOpened) {
         _disposeCapture(openedCapture);
         return false;
@@ -276,22 +282,37 @@ class WindowsAirGestureBackend {
         ? cv.CAP_DSHOW
         : (Platform.isLinux ? cv.CAP_V4L2 : null);
 
-    if (preferredBackend != null) {
-      final preferred = await cv.VideoCaptureAsync.fromDeviceAsync(
-        0,
-        apiPreference: preferredBackend,
-      );
-      if (preferred.isOpened) {
-        return preferred;
+    // Try primary and secondary camera indices in case index 0 is an IR or virtual camera.
+    for (var index = 0; index < 3; index++) {
+      if (preferredBackend != null) {
+        try {
+          final preferred = await cv.VideoCaptureAsync.fromDeviceAsync(
+            index,
+            apiPreference: preferredBackend,
+          );
+          if (preferred.isOpened) {
+            return preferred;
+          }
+          _disposeCapture(preferred);
+        } catch (e) {
+          debugPrint(
+            '[WindowsAirGestureBackend] Open device $index (preferred) failed: $e',
+          );
+        }
       }
-      _disposeCapture(preferred);
-    }
 
-    final fallback = await cv.VideoCaptureAsync.fromDeviceAsync(0);
-    if (fallback.isOpened) {
-      return fallback;
+      try {
+        final fallback = await cv.VideoCaptureAsync.fromDeviceAsync(index);
+        if (fallback.isOpened) {
+          return fallback;
+        }
+        _disposeCapture(fallback);
+      } catch (e) {
+        debugPrint(
+          '[WindowsAirGestureBackend] Open device $index (fallback) failed: $e',
+        );
+      }
     }
-    _disposeCapture(fallback);
     return null;
   }
 

@@ -1,0 +1,24 @@
+Envía archivos de Android a PC, tablet u otro teléfono sin internet: hasta 100 MB/s y cero anuncios.
+
+¿Buscas una app de transferencia Wi-Fi rápida y sin anuncios, o una alternativa offline a AirDrop y Quick Share para Android, Windows y Linux? SendSnap te permite transferir fotos, vídeos 4K, APK, documentos y carpetas completas de forma inalámbrica por Wi-Fi local o punto de acceso móvil: sin cables USB, sin subidas a la nube y sin límites de tamaño.
+
+Transfiere archivos en segundos — 3 formas de compartir:
+• Air Grab & Drop (transferencia por gestos): Cierra la mano para agarrar un archivo de la pantalla de tu teléfono y ábrela para soltarlo directamente en tu PC o tablet.
+• Arrastrar y soltar de borde a borde: Desliza archivos suavemente por el borde de tu pantalla directamente hacia un dispositivo cercano conectado.
+• Transferencia por toque, radar y código QR: Descubre automáticamente dispositivos cercanos en tu red o escanea un código QR para emparejamiento P2P instantáneo.
+
+Transferencia de Android a PC Windows y Linux:
+• Envía vídeos grandes, fotos, PDF, música, ZIP y aplicaciones instaladas entre Android y PC con Windows o Linux.
+• Haz clic derecho en cualquier archivo en el Explorador de Windows ("Send with SendSnap") para enviarlo directamente a tu teléfono.
+• Transfiere archivos entre subredes mediante IP directa o punto de acceso local sin conexión a internet.
+
+¿Por qué cambiar a SendSnap?
+• Velocidad Wi-Fi local de 100 MB/s: Hasta 200 veces más rápido que Bluetooth para vídeos 4K pesados y lotes de fotos.
+• 100 % offline y privado: Transferencia punto a punto en red local: sin servidores, sin inicio de sesión y sin rastreo.
+• Cero anuncios y código abierto: Interfaz limpia y ligera con visor multimedia integrado e historial de transferencias recientes.
+• Soporte multilingüe: English, Français, العربية, Español y más.
+
+Qué puedes enviar:
+Fotos, vídeos 4K, música, apps APK, documentos, PDF y carpetas completas conservando la calidad original, sin compresión.
+
+Código abierto en GitHub: https://github.com/Youssef0356/SendSnap

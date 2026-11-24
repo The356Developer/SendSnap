@@ -2890,13 +2890,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     if (_isAirTrackingStarting || _airGestureService.isRunning) return;
     _isAirTrackingStarting = true;
     try {
-      final supported = await _airGestureService.isSupported();
-      if (!supported) {
-        _airCameraDenied = true;
-        return;
-      }
-
       if (Platform.isAndroid) {
+        final supported = await _airGestureService.isSupported();
+        if (!supported) {
+          _airCameraDenied = true;
+          return;
+        }
         var granted = await Permission.camera.isGranted;
         if (!granted) {
           granted = await PermissionService().requestCameraPermission();
@@ -2911,7 +2910,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
       _airFrameSub ??= _airGestureService.frames.listen(
         _onBackgroundAirFrame,
-        onError: (_) {},
+        onError: (Object error) {
+          debugPrint('[HomeScreen] Air gesture stream error: $error');
+          if (mounted && _isHandDetected) {
+            setState(() {
+              _isHandDetected = false;
+            });
+          }
+        },
       );
       final started = await _airGestureService.start();
       if (!mounted) {

@@ -1,0 +1,24 @@
+Send files from Android to PC, tablet, or another phone without internet—up to 100 MB/s with zero ads.
+
+Looking for a fast, ad-free Wi-Fi file transfer app or an offline AirDrop & Quick Share alternative for Android, Windows, and Linux? SendSnap lets you transfer photos, 4K videos, APKs, documents, and entire folders wirelessly over your local Wi-Fi or mobile hotspot—no USB cables, no cloud uploads, and no file size limits.
+
+Transfer Files in Seconds — 3 Ways to Share:
+• Air Grab & Drop (Hand Gesture Transfer): Close your hand to grab a file off your phone screen and open your hand to drop it straight onto your PC or tablet.
+• Edge-to-Edge Drag & Drop: Slide files smoothly across the edge of your screen directly onto a nearby connected device.
+• Tap, Radar & QR Code Transfer: Auto-discover nearby devices on your network or scan a QR code for instant peer-to-peer pairing.
+
+Android to Windows & Linux Desktop File Transfer:
+• Send large videos, photos, PDFs, music, ZIPs, and installed apps between Android and Windows / Linux PC.
+• Right-click any file in Windows Explorer ("Send with SendSnap") to push it straight to your phone.
+• Transfer files across subnets via direct IP or local hotspot without internet access.
+
+Why Switch to SendSnap?
+• 100 MB/s Local Wi-Fi Speed: Up to 200x faster than Bluetooth for large 4K videos and photo batches.
+• 100% Offline & Private: Peer-to-peer local network transfer—no servers, no account login, and no tracking.
+• Zero Ads & Open Source: Clean, lightweight interface with a built-in media viewer and recent transfer history.
+• Multi-Language Support: English, Français, العربية, Español, and more.
+
+What You Can Send:
+Photos, 4K videos, music, APK apps, documents, PDFs, and full folders with original quality preserved—no compression.
+
+Open-source on GitHub: https://github.com/Youssef0356/SendSnap
