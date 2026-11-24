@@ -783,6 +783,10 @@ class MainActivity : FlutterActivity() {
                     directMgr.disconnectDirect()
                     result.success(true)
                 }
+                "ensureLanWifiRouting" -> {
+                    val enable = call.argument<Boolean>("enable") ?: true
+                    result.success(directMgr.ensureLanWifiRouting(enable))
+                }
                 else -> result.notImplemented()
             }
         }

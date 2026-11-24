@@ -2227,6 +2227,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           final hotspot = liveDevProv.activeHotspotInfo;
           final qrData = DirectP2pService.buildQrPayload(
             lanIp: hasIp ? ip : null,
+            altLanIps: liveDevProv.localIps,
             port: liveDevProv.nearbyService.httpServer.port ?? 53318,
             hotspot: hotspot,
             deviceId: liveDevProv.nearbyService.localDevice?.id,
@@ -2514,7 +2515,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       messenger.showSnackBar(
         const SnackBar(
           content: Text(
-            'Could not reach device. Make sure Wi-Fi is turned ON on both devices.',
+            'Could not reach device. Ensure Wi-Fi is ON (or re-open QR on receiver if your router isolates Ethernet & Wi-Fi).',
           ),
           backgroundColor: AppColors.error,
         ),

@@ -420,7 +420,9 @@ class NearbyService {
   Future<bool> startWarmDiscovery(String deviceName) async {
     if (_isAdvertising || _isActiveDiscovering) return true;
     try {
+      await _directP2p.ensureLanWifiRouting(enable: true);
       final local = await _ensureLocalDevice(deviceName);
+      if (_isAdvertising || _isActiveDiscovering) return true;
       _isWarmDiscovering = true;
 
       await _discoveryService.startDiscovery(
@@ -444,6 +446,7 @@ class NearbyService {
   Future<void> boostWarmDiscovery() async {
     if (_isAdvertising) return;
     try {
+      await _directP2p.ensureLanWifiRouting(enable: true);
       NetworkInfoService.invalidateCache();
       if (_localDevice != null) {
         final ip = await NetworkInfoService.getLocalIpAddress() ?? '0.0.0.0';
@@ -458,16 +461,18 @@ class NearbyService {
   }
 
   /// Refreshes local IP and re-announces the receiver immediately after
-  /// returning from Hotspot / Wi-Fi settings.
+  /// returning from Hotspot / Wi-Fi settings or waking from desktop sleep.
   Future<void> refreshAdvertisingNetwork(String deviceName) async {
     if (!_isAdvertising) return;
     try {
+      await _directP2p.ensureLanWifiRouting(enable: true);
       NetworkInfoService.invalidateCache();
       final ip = await NetworkInfoService.getLocalIpAddress() ?? '0.0.0.0';
       final base = _localDevice ?? await _ensureLocalDevice(deviceName);
       _localDevice = base.copyWith(ip: ip);
       if (_discoveryService.isRunning) {
         _discoveryService.updateLocalDevice(_localDevice!);
+        await _discoveryService.refreshInterfacesAndMulticast();
         await _discoveryService.triggerBurst();
       } else {
         await _discoveryService.startDiscovery(
@@ -496,6 +501,7 @@ class NearbyService {
   /// already-discovered devices or recreating sockets.
   Future<bool> promoteToActiveDiscovery(String deviceName) async {
     try {
+      await _directP2p.ensureLanWifiRouting(enable: true);
       final local = await _ensureLocalDevice(deviceName);
       if (_isAdvertising) {
         await stopAll(disconnectDirect: false);
@@ -527,12 +533,13 @@ class NearbyService {
     }
   }
 
-  /// Start receiving mode (Embedded HTTP Server + LAN UDP/NSD + Android Direct Wi-Fi GO).
+  /// Start receiving mode (Embedded HTTP Server + LAN UDP/NSD + Android/Windows Direct Wi-Fi GO).
   Future<bool> startAdvertising(String deviceName) async {
     try {
       debugPrint('[NearbyService] Starting advertising as $deviceName...');
       await _stopDiscoveryOnly();
       _knownDevices.clear();
+      await _directP2p.ensureLanWifiRouting(enable: true);
 
       final local = await _ensureLocalDevice(deviceName);
 
@@ -563,12 +570,26 @@ class NearbyService {
         deviceType: _localDevice!.deviceType,
       );
 
-      // 4. Start Android Wi-Fi Direct Group Owner + DNS-SD service (works without router!)
+      // 4. Start Direct Wi-Fi Group Owner / Soft-AP + BLE beacon (Android & Windows — works without router!)
       final directOk = await _directP2p.startWifiDirectAdvertising(
         id: _localDevice!.id,
         name: _localDevice!.name,
         port: boundPort,
       );
+
+      if (directOk && _isAdvertising) {
+        NetworkInfoService.invalidateCache();
+        final refreshedIp =
+            await NetworkInfoService.getLocalIpAddress(forceRefresh: true);
+        if (refreshedIp != null &&
+            refreshedIp.isNotEmpty &&
+            (_localDevice!.ip.isEmpty || _localDevice!.ip == '0.0.0.0')) {
+          _localDevice = _localDevice!.copyWith(ip: refreshedIp);
+          _discoveryService.updateLocalDevice(_localDevice!);
+        }
+        await _discoveryService.refreshInterfacesAndMulticast();
+        unawaited(_discoveryService.triggerBurst());
+      }
 
       debugPrint(
         '[NearbyService] Advertising active on ${_localDevice!.ip}:$boundPort (lan=$discoveryOk, direct=$directOk)',
@@ -604,6 +625,7 @@ class NearbyService {
       await _directP2p.stopWifiDirectAdvertising();
       if (disconnectDirect) {
         await _directP2p.disconnectDirect();
+        await _directP2p.ensureLanWifiRouting(enable: false);
       }
       _activeHotspotInfo = null;
       onHotspotInfoChanged?.call(null);
@@ -646,6 +668,7 @@ class NearbyService {
 
     try {
       onConnectionInitiated?.call(resolvedId, target.name);
+      await _directP2p.ensureLanWifiRouting(enable: true);
 
       // 1. Try direct LAN ping first when a LAN IP is known
       if (target.hasLanIp && !target.isWifiDirect) {
@@ -666,8 +689,8 @@ class NearbyService {
         }
       }
 
-      // 2. Automatic cross-Wi-Fi Direct connect on Android
-      if (Platform.isAndroid &&
+      // 2. Automatic cross-Wi-Fi Direct connect on Android & Windows
+      if ((Platform.isAndroid || Platform.isWindows) &&
           (target.hasDirectCredentials || target.p2pDeviceAddress != null)) {
         final connectRes = await _directP2p.connectToPeer(
           ssid: target.p2pSsid,
@@ -700,14 +723,14 @@ class NearbyService {
         }
       }
 
-      if (Platform.isAndroid && _isActiveDiscovering) {
+      if ((Platform.isAndroid || Platform.isWindows) && _isActiveDiscovering) {
         unawaited(_directP2p.startWifiDirectDiscovery(isPassive: false));
       }
       onConnectionResult?.call(resolvedId, false);
       return false;
     } catch (e) {
       debugPrint('[NearbyService] requestConnection error: $e');
-      if (Platform.isAndroid && _isActiveDiscovering) {
+      if ((Platform.isAndroid || Platform.isWindows) && _isActiveDiscovering) {
         unawaited(_directP2p.startWifiDirectDiscovery(isPassive: false));
       }
       onConnectionResult?.call(resolvedId, false);
@@ -715,17 +738,20 @@ class NearbyService {
     }
   }
 
-  /// Parses an enriched or legacy QR code and connects via LAN or Direct Wi-Fi auto-join.
+  /// Parses an enriched or legacy QR code and connects via LAN (all candidate IPs) or Direct Wi-Fi auto-join.
   Future<NearbyDevice?> connectFromQrData(String rawQr) async {
     final parsed = DirectP2pService.parseQrPayload(rawQr);
     if (parsed == null) return null;
 
-    // 1. Fast LAN ping first if QR contains a router IP
-    if (parsed.hasUsableLanIp) {
-      final lanDevice = await _httpClient.ping(
-        parsed.lanIp!,
+    await _directP2p.ensureLanWifiRouting(enable: true);
+
+    // 1. Try all candidate LAN IPs first (with retry for Wi-Fi power-save / ARP wakeup)
+    for (final candidateIp in parsed.allLanIps) {
+      final lanDevice = await _httpClient.pingWithRetry(
+        candidateIp,
         parsed.port,
-        timeout: const Duration(milliseconds: 900),
+        maxAttempts: 2,
+        retryDelay: const Duration(milliseconds: 250),
       );
       if (lanDevice != null) {
         final enriched = lanDevice.copyWith(
@@ -740,8 +766,10 @@ class NearbyService {
       }
     }
 
-    // 2. Auto-join Direct Wi-Fi / Hotspot on Android if credentials are embedded
-    if (Platform.isAndroid && parsed.hasDirectCredentials) {
+    // 2. Auto-join Direct Wi-Fi / Hotspot on Android & Windows if credentials are embedded
+    // (automatically bypasses routers with AP/LAN isolation such as Ethernet-to-Wi-Fi blocks!)
+    if ((Platform.isAndroid || Platform.isWindows) &&
+        parsed.hasDirectCredentials) {
       final res = await _directP2p.connectToPeer(
         ssid: parsed.ssid,
         passphrase: parsed.passphrase,
@@ -751,7 +779,8 @@ class NearbyService {
       if (res.success) {
         final targetIp = res.goIp ?? parsed.p2pIp ?? '192.168.49.1';
         NetworkInfoService.invalidateCache();
-        final directDev = await _httpClient.pingWithRetry(targetIp, parsed.port);
+        final directDev =
+            await _httpClient.pingWithRetry(targetIp, parsed.port);
         if (directDev != null) {
           final enriched = directDev.copyWith(
             ip: targetIp,
@@ -772,11 +801,12 @@ class NearbyService {
     // 3. Fallback direct ping to p2pIp if device already manually joined receiver's hotspot
     if (parsed.p2pIp != null &&
         parsed.p2pIp!.isNotEmpty &&
-        parsed.p2pIp != parsed.lanIp) {
-      final directPing = await _httpClient.ping(
+        !parsed.allLanIps.contains(parsed.p2pIp)) {
+      final directPing = await _httpClient.pingWithRetry(
         parsed.p2pIp!,
         parsed.port,
-        timeout: const Duration(milliseconds: 900),
+        maxAttempts: 2,
+        retryDelay: const Duration(milliseconds: 250),
       );
       if (directPing != null) {
         final enriched = directPing.copyWith(

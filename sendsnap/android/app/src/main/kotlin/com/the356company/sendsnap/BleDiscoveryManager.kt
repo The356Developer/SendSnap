@@ -34,10 +34,14 @@ class BleDiscoveryManager(private val context: Context) {
         private const val TAG = "SendSnapBLE"
         private val ADV_SERVICE_UUID = ParcelUuid.fromString("0000FE55-0000-1000-8000-00805F9B34FB")
         private val SCAN_RESP_UUID = ParcelUuid.fromString("0000FE56-0000-1000-8000-00805F9B34FB")
+        private const val SENDSNAP_COMPANY_ID = 0x3560
         private const val DIRECT_PREFIX = "DIRECT-S5-Snap"
         private const val DEFAULT_GO_IP = "192.168.49.1"
         private const val FORMAT_COMPACT_DIRECT: Byte = 0x01
         private const val FORMAT_GENERIC_HOTSPOT: Byte = 0x02
+        private const val FORMAT_COMPACT_V3_ANDROID: Byte = 0x31
+        private const val FORMAT_COMPACT_V3_WINDOWS: Byte = 0x32
+        private const val FORMAT_GENERIC_V3_WINDOWS: Byte = 0x34
         private const val EMIT_THROTTLE_MS = 2500L
         private val HEX_CHARS = "0123456789abcdef".toCharArray()
     }
@@ -405,6 +409,18 @@ class BleDiscoveryManager(private val context: Context) {
 
     private fun handleScanResult(result: ScanResult) {
         val record = result.scanRecord ?: return
+
+        // 1. Check single-frame ManufacturerSpecificData (0x3560) used by Windows & cross-platform v3 beacons
+        val mfg = record.getManufacturerSpecificData(SENDSNAP_COMPANY_ID)
+        if (mfg != null && mfg.isNotEmpty()) {
+            val mfgPeer = decodeMfgPayload(mfg, record.deviceName)
+            if (mfgPeer != null) {
+                emitPeerThrottled(mfgPeer)
+                return
+            }
+        }
+
+        // 2. Check legacy/Android 16-bit ServiceData (0xFE55 + 0xFE56)
         val adv = record.getServiceData(ADV_SERVICE_UUID) ?: return
         if (adv.isEmpty()) return
         val resp = record.getServiceData(SCAN_RESP_UUID)
@@ -415,6 +431,10 @@ class BleDiscoveryManager(private val context: Context) {
             else -> null
         } ?: return
 
+        emitPeerThrottled(peerMap)
+    }
+
+    private fun emitPeerThrottled(peerMap: Map<String, Any>) {
         val peerId = peerMap["id"] as? String ?: return
         val now = SystemClock.elapsedRealtime()
         val prev = lastEmittedAt[peerId]
@@ -423,6 +443,64 @@ class BleDiscoveryManager(private val context: Context) {
         }
         lastEmittedAt[peerId] = now
         onPeerFound?.invoke(peerMap)
+    }
+
+    private fun decodeMfgPayload(mfg: ByteArray, scanDeviceName: String?): Map<String, Any>? {
+        if (mfg.isEmpty()) return null
+        val tag = mfg[0]
+        if ((tag == FORMAT_COMPACT_V3_ANDROID || tag == FORMAT_COMPACT_V3_WINDOWS) && mfg.size >= 23) {
+            val suffix = String(mfg, 1, 4, Charsets.US_ASCII)
+            val pass = String(mfg, 5, 8, Charsets.US_ASCII)
+            if (!suffix.all { it in '0'..'9' || it in 'A'..'Z' || it in 'a'..'z' }) return null
+            if (pass.length != 8 || !pass.all { it in '!'..'~' }) return null
+            val port = ((mfg[13].toInt() and 0xFF) shl 8) or (mfg[14].toInt() and 0xFF)
+            if (port <= 0) return null
+            val o3 = mfg[15].toInt() and 0xFF
+            val o4 = mfg[16].toInt() and 0xFF
+            val hex12 = bytesToHex(mfg, 17, 6)
+            val isWindows = tag == FORMAT_COMPACT_V3_WINDOWS
+            val cleanScanName = scanDeviceName?.trim()?.takeIf { it.isNotEmpty() }
+            val name = cleanScanName ?: if (isWindows) "Windows PC" else "SendSnap Device"
+
+            return mapOf(
+                "id" to "ble-$hex12",
+                "name" to name,
+                "port" to port,
+                "deviceType" to if (isWindows) "windows" else "android",
+                "p2pDeviceAddress" to "",
+                "p2pSsid" to "$DIRECT_PREFIX$suffix",
+                "p2pPassphrase" to pass,
+                "p2pGoIp" to "192.168.$o3.$o4",
+                "airToken" to ""
+            )
+        }
+
+        if (tag == FORMAT_GENERIC_V3_WINDOWS && mfg.size >= 14) {
+            val ssidLen = mfg[1].toInt() and 0xFF
+            if (ssidLen <= 0 || ssidLen > 16 || mfg.size < 2 + ssidLen + 12) return null
+            val ssid = String(mfg, 2, ssidLen, Charsets.UTF_8)
+            val off = 2 + ssidLen
+            val pass = String(mfg, off, 8, Charsets.UTF_8)
+            val port = ((mfg[off + 8].toInt() and 0xFF) shl 8) or (mfg[off + 9].toInt() and 0xFF)
+            if (port <= 0) return null
+            val o3 = mfg[off + 10].toInt() and 0xFF
+            val o4 = mfg[off + 11].toInt() and 0xFF
+            val cleanScanName = scanDeviceName?.trim()?.takeIf { it.isNotEmpty() }
+
+            return mapOf(
+                "id" to "ble-$ssid",
+                "name" to (cleanScanName ?: "Windows PC"),
+                "port" to port,
+                "deviceType" to "windows",
+                "p2pDeviceAddress" to "",
+                "p2pSsid" to ssid,
+                "p2pPassphrase" to pass,
+                "p2pGoIp" to "192.168.$o3.$o4",
+                "airToken" to ""
+            )
+        }
+
+        return null
     }
 
     private fun decodeFormat01(adv: ByteArray, resp: ByteArray?): Map<String, Any>? {

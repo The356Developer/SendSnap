@@ -80,6 +80,7 @@ class DirectConnectResult {
 
 class ParsedQrPayload {
   final String? lanIp;
+  final List<String> altLanIps;
   final int port;
   final String? ssid;
   final String? passphrase;
@@ -89,6 +90,7 @@ class ParsedQrPayload {
 
   const ParsedQrPayload({
     this.lanIp,
+    this.altLanIps = const [],
     this.port = 53318,
     this.ssid,
     this.passphrase,
@@ -102,13 +104,32 @@ class ParsedQrPayload {
 
   bool get hasUsableLanIp =>
       lanIp != null && lanIp!.isNotEmpty && lanIp != '0.0.0.0';
+
+  List<String> get allLanIps {
+    final result = <String>[];
+    if (hasUsableLanIp) {
+      result.add(lanIp!);
+    }
+    for (final ip in altLanIps) {
+      final trimmed = ip.trim();
+      if (trimmed.isNotEmpty &&
+          trimmed != '0.0.0.0' &&
+          !result.contains(trimmed)) {
+        result.add(trimmed);
+      }
+    }
+    return result;
+  }
 }
 
-/// Bridge to native Android Wi-Fi Direct (`WifiP2pManager` + DNS-SD) and `NsdManager`.
-/// On non-Android platforms, methods safely resolve to no-ops.
+/// Bridge to native Android (`WifiP2pManager` + DNS-SD + `NsdManager` + BLE) and
+/// Windows (`WiFiDirectAdvertisementPublisher` + WinRT BLE + WLAN Direct) P2P transports.
 class DirectP2pService {
   static const MethodChannel _channel =
       MethodChannel('com.the356company.sendsnap/direct_p2p');
+
+  static bool get _supportsDirectWifiChannel =>
+      Platform.isAndroid || Platform.isWindows;
 
   Function(NearbyDevice device)? onNsdDeviceFound;
   Function(String deviceId)? onNsdDeviceLost;
@@ -121,9 +142,13 @@ class DirectP2pService {
   bool _handlerRegistered = false;
 
   void initialize() {
-    if (!Platform.isAndroid || _handlerRegistered) return;
-    _handlerRegistered = true;
-    _channel.setMethodCallHandler(_handleNativeCall);
+    if (!_supportsDirectWifiChannel || _handlerRegistered) return;
+    try {
+      _channel.setMethodCallHandler(_handleNativeCall);
+      _handlerRegistered = true;
+    } catch (_) {
+      // Safe no-op in headless unit tests where ServicesBinding is not initialized.
+    }
   }
 
   Future<dynamic> _handleNativeCall(MethodCall call) async {
@@ -206,7 +231,7 @@ class DirectP2pService {
   }
 
   Future<DirectP2pStatus> getDirectStatus() async {
-    if (!Platform.isAndroid) {
+    if (!_supportsDirectWifiChannel) {
       return const DirectP2pStatus();
     }
     try {
@@ -214,10 +239,24 @@ class DirectP2pService {
       if (result != null) {
         return DirectP2pStatus.fromMap(result);
       }
+    } on MissingPluginException {
+      return const DirectP2pStatus();
     } catch (e) {
       debugPrint('[DirectP2pService] getDirectStatus error: $e');
     }
     return const DirectP2pStatus();
+  }
+
+  Future<bool> ensureLanWifiRouting({bool enable = true}) async {
+    if (!Platform.isAndroid) return false;
+    try {
+      return (await _channel.invokeMethod<bool>('ensureLanWifiRouting', {
+            'enable': enable,
+          })) ??
+          false;
+    } catch (_) {
+      return false;
+    }
   }
 
   Future<bool> _launchWindowsSettings(String primaryUri) async {
@@ -316,7 +355,7 @@ class DirectP2pService {
     required int port,
     String? airToken,
   }) async {
-    if (!Platform.isAndroid) return false;
+    if (!_supportsDirectWifiChannel) return false;
     try {
       final result = await _channel.invokeMapMethod<dynamic, dynamic>(
         'startWifiDirectAdvertising',
@@ -328,6 +367,8 @@ class DirectP2pService {
         },
       );
       return (result?['success'] as bool?) ?? false;
+    } on MissingPluginException {
+      return false;
     } catch (e) {
       debugPrint('[DirectP2pService] startWifiDirectAdvertising error: $e');
       return false;
@@ -335,19 +376,21 @@ class DirectP2pService {
   }
 
   Future<void> stopWifiDirectAdvertising() async {
-    if (!Platform.isAndroid) return;
+    if (!_supportsDirectWifiChannel) return;
     try {
       await _channel.invokeMethod('stopWifiDirectAdvertising');
     } catch (_) {}
   }
 
   Future<bool> startWifiDirectDiscovery({bool isPassive = false}) async {
-    if (!Platform.isAndroid) return false;
+    if (!_supportsDirectWifiChannel) return false;
     try {
       return (await _channel.invokeMethod<bool>('startWifiDirectDiscovery', {
             'isPassive': isPassive,
           })) ??
           false;
+    } on MissingPluginException {
+      return false;
     } catch (e) {
       debugPrint('[DirectP2pService] startWifiDirectDiscovery error: $e');
       return false;
@@ -355,7 +398,7 @@ class DirectP2pService {
   }
 
   Future<void> setWifiDirectDiscoveryPace({required bool isPassive}) async {
-    if (!Platform.isAndroid) return;
+    if (!_supportsDirectWifiChannel) return;
     try {
       await _channel.invokeMethod('setWifiDirectDiscoveryPace', {
         'isPassive': isPassive,
@@ -364,7 +407,7 @@ class DirectP2pService {
   }
 
   Future<void> stopWifiDirectDiscovery() async {
-    if (!Platform.isAndroid) return;
+    if (!_supportsDirectWifiChannel) return;
     try {
       await _channel.invokeMethod('stopWifiDirectDiscovery');
     } catch (_) {}
@@ -377,10 +420,10 @@ class DirectP2pService {
     String? goIp,
     int port = 53318,
   }) async {
-    if (!Platform.isAndroid) {
+    if (!_supportsDirectWifiChannel) {
       return const DirectConnectResult(
         success: false,
-        error: 'Direct Wi-Fi pairing is only supported on Android',
+        error: 'Direct Wi-Fi pairing is only supported on Android and Windows',
       );
     }
     try {
@@ -402,33 +445,62 @@ class DirectP2pService {
         goIp: (ip != null && ip.isNotEmpty) ? ip : null,
         error: (error != null && error.isNotEmpty) ? error : null,
       );
+    } on MissingPluginException {
+      return const DirectConnectResult(
+        success: false,
+        error: 'Direct Wi-Fi native channel unavailable in this environment',
+      );
     } catch (e) {
       return DirectConnectResult(success: false, error: e.toString());
     }
   }
 
   Future<void> disconnectDirect() async {
-    if (!Platform.isAndroid) return;
+    if (!_supportsDirectWifiChannel) return;
     try {
       await _channel.invokeMethod('disconnectWifiDirect');
     } catch (_) {}
   }
 
-  /// Builds a unified QR payload containing LAN IP (if connected to router) and
+  /// Builds a unified QR payload containing LAN IP(s) (if connected to router) and
   /// Direct Wi-Fi credentials (when hosting a Direct Wi-Fi group / hotspot).
   static String buildQrPayload({
     String? lanIp,
+    List<String>? altLanIps,
     required int port,
     DirectHotspotInfo? hotspot,
     String? deviceId,
     String? deviceName,
   }) {
-    final validLan =
-        (lanIp != null && lanIp.isNotEmpty && lanIp != '0.0.0.0') ? lanIp : null;
     final hasHotspot = hotspot != null && hotspot.isValid;
+    final candidateIps = <String>[];
+    if (lanIp != null &&
+        lanIp.isNotEmpty &&
+        lanIp != '0.0.0.0' &&
+        (!hasHotspot || lanIp != hotspot.goIp)) {
+      candidateIps.add(lanIp);
+    }
+    if (altLanIps != null) {
+      for (final rawIp in altLanIps) {
+        final ip = rawIp.trim();
+        if (ip.isNotEmpty &&
+            ip != '0.0.0.0' &&
+            (!hasHotspot || ip != hotspot.goIp) &&
+            !candidateIps.contains(ip)) {
+          candidateIps.add(ip);
+        }
+      }
+    }
+
+    final validLan = candidateIps.isNotEmpty ? candidateIps.first : null;
+    final extraIps =
+        candidateIps.length > 1 ? candidateIps.sublist(1) : const <String>[];
     final host = validLan ?? (hasHotspot ? hotspot.goIp : '0.0.0.0');
 
     final params = <String, String>{};
+    if (extraIps.isNotEmpty) {
+      params['alts'] = extraIps.join(',');
+    }
     if (hasHotspot) {
       params['ssid'] = hotspot.ssid;
       params['pass'] = hotspot.passphrase;
@@ -465,12 +537,21 @@ class DirectP2pService {
         final isP2pOnly = qp['p2pOnly'] == '1';
         final rawHost = uri.host;
         final lanIp = (isP2pOnly || rawHost == '0.0.0.0') ? null : rawHost;
+        final altsRaw = qp['alts'];
+        final altLanIps = (altsRaw != null && altsRaw.isNotEmpty)
+            ? altsRaw
+                .split(',')
+                .map((s) => s.trim())
+                .where((s) => s.isNotEmpty && s != '0.0.0.0')
+                .toList()
+            : const <String>[];
         final port = uri.hasPort && uri.port > 0 ? uri.port : 53318;
         final ssid = qp['ssid'];
         final pass = qp['pass'];
         final p2pIp = qp['p2pIp'] ?? ((ssid != null && ssid.isNotEmpty) ? rawHost : null);
         return ParsedQrPayload(
           lanIp: lanIp,
+          altLanIps: altLanIps,
           port: port,
           ssid: (ssid != null && ssid.isNotEmpty) ? ssid : null,
           passphrase: (pass != null && pass.isNotEmpty) ? pass : null,

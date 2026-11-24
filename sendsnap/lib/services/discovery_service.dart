@@ -20,6 +20,7 @@ class DiscoveryService {
   Timer? _cleanupTimer;
   Timer? _sweepTimer;
   Timer? _initialSweepDelayTimer;
+  Timer? _rebindTimer;
   final List<Timer> _burstTimers = [];
 
   NearbyDevice? _myDevice;
@@ -29,6 +30,9 @@ class DiscoveryService {
   bool _running = false;
   bool _isSweeping = false;
   bool _isCleaningUp = false;
+  bool _isRebinding = false;
+  int _consecutiveSendFailures = 0;
+  int _lifecycleGen = 0;
 
   final Map<String, NearbyDevice> _discoveredDevices = {};
 
@@ -40,7 +44,7 @@ class DiscoveryService {
   Function(String token, NearbyDevice claimer)? onAirClaimReceived;
 
   List<NearbyDevice> get devices => _discoveredDevices.values.toList();
-  bool get isRunning => _running;
+  bool get isRunning => _running && _socket != null;
   bool get isPassive => _isPassive;
 
   /// Filters incoming discovery packets by local vs remote role so idle/sender apps
@@ -66,61 +70,155 @@ class DiscoveryService {
 
     if (_running && _socket != null) {
       // Update in-place without clearing discovered peers or bouncing sockets
+      await refreshInterfacesAndMulticast();
       _refreshTimers();
       unawaited(triggerBurst());
       return true;
     }
 
+    final gen = ++_lifecycleGen;
+    _rebindTimer?.cancel();
+    _rebindTimer = null;
     _discoveredDevices.clear();
     _running = true;
+    _consecutiveSendFailures = 0;
 
     await NetworkInfoService.acquireMulticastLock();
     await _refreshLocalIps();
 
+    if (!_running || gen != _lifecycleGen) return false;
+
+    final bound = await _openAndAttachSocket(gen);
+    if (!bound) {
+      // Keep _running true and schedule self-healing retry if an ephemeral OS socket conflict occurred
+      _scheduleSocketRebind(gen);
+      _refreshTimers();
+      return false;
+    }
+
+    // Rapid initial burst so peers appear in <300ms
+    _scheduleInitialBurst();
+
+    // Periodic UDP heartbeat & cleanup & fast subnet sweep
+    _refreshTimers();
+
+    if (!_isReceiver) {
+      _initialSweepDelayTimer?.cancel();
+      _initialSweepDelayTimer = Timer(const Duration(milliseconds: 350), () {
+        if (_running && !_isReceiver) {
+          _performSubnetSweep();
+        }
+      });
+    }
+
+    debugPrint(
+      '[DiscoveryService] Started (receiver=$_isReceiver, passive=$_isPassive) on port $discoveryPort for ${localDevice.name}',
+    );
+    return true;
+  }
+
+  Future<bool> _openAndAttachSocket(int gen) async {
     try {
-      _socket = await _bindDiscoverySocket();
-      _socket!.broadcastEnabled = true;
+      final sock = await _bindDiscoverySocket();
+      if (!_running || gen != _lifecycleGen) {
+        try {
+          sock.close();
+        } catch (_) {}
+        return false;
+      }
 
-      await _joinMulticastOnLanInterfaces(_socket!);
+      sock.broadcastEnabled = true;
+      await _joinMulticastOnLanInterfaces(sock);
 
-      _socket!.listen(
+      _socket = sock;
+      _consecutiveSendFailures = 0;
+
+      sock.listen(
         (RawSocketEvent event) {
           if (event == RawSocketEvent.read) {
             Datagram? datagram;
-            while ((datagram = _socket?.receive()) != null) {
+            while ((datagram = sock.receive()) != null) {
               _handleIncomingDatagram(datagram!);
+            }
+          } else if (event == RawSocketEvent.closed) {
+            if (identical(_socket, sock)) {
+              _socket = null;
+              if (_running && gen == _lifecycleGen) {
+                debugPrint('[DiscoveryService] UDP socket closed by OS — scheduling self-heal rebind');
+                _scheduleSocketRebind(gen);
+              }
             }
           }
         },
         onError: (e) {
           debugPrint('[DiscoveryService] Socket error: $e');
-        },
-      );
-
-      // Rapid initial burst so peers appear in <300ms
-      _scheduleInitialBurst();
-
-      // Periodic UDP heartbeat & cleanup & fast subnet sweep
-      _refreshTimers();
-
-      if (!_isReceiver) {
-        _initialSweepDelayTimer?.cancel();
-        _initialSweepDelayTimer = Timer(const Duration(milliseconds: 350), () {
-          if (_running && !_isReceiver) {
-            _performSubnetSweep();
+          if (identical(_socket, sock)) {
+            try {
+              sock.close();
+            } catch (_) {}
+            _socket = null;
+            if (_running && gen == _lifecycleGen) {
+              _scheduleSocketRebind(gen);
+            }
           }
-        });
-      }
-
-      debugPrint(
-        '[DiscoveryService] Started (receiver=$_isReceiver, passive=$_isPassive) on port $discoveryPort for ${localDevice.name}',
+        },
+        onDone: () {
+          if (identical(_socket, sock)) {
+            _socket = null;
+            if (_running && gen == _lifecycleGen) {
+              debugPrint('[DiscoveryService] UDP socket stream ended — scheduling self-heal rebind');
+              _scheduleSocketRebind(gen);
+            }
+          }
+        },
       );
       return true;
     } catch (e) {
-      debugPrint('[DiscoveryService] Failed to start discovery: $e');
-      _running = false;
+      debugPrint('[DiscoveryService] Failed to bind discovery socket: $e');
       return false;
     }
+  }
+
+  void _scheduleSocketRebind(int gen, {Duration delay = const Duration(milliseconds: 600)}) {
+    if (!_running || gen != _lifecycleGen || _isRebinding) return;
+    _rebindTimer?.cancel();
+    _rebindTimer = Timer(delay, () async {
+      if (!_running || gen != _lifecycleGen || _socket != null || _isRebinding) {
+        return;
+      }
+      _isRebinding = true;
+      try {
+        NetworkInfoService.invalidateCache();
+        await _refreshLocalIps();
+        final ok = await _openAndAttachSocket(gen);
+        if (ok && _running && gen == _lifecycleGen) {
+          debugPrint('[DiscoveryService] Self-healed UDP discovery socket on port $discoveryPort');
+          _scheduleInitialBurst();
+        } else if (_running && gen == _lifecycleGen) {
+          _scheduleSocketRebind(gen, delay: const Duration(milliseconds: 2000));
+        }
+      } finally {
+        _isRebinding = false;
+      }
+    });
+  }
+
+  /// Refreshes local IPs, rejoins multicast on newly activated interfaces (such as
+  /// Windows `192.168.137.1` Direct Wi-Fi soft-AP), and heals the UDP socket if closed.
+  Future<void> refreshInterfacesAndMulticast() async {
+    if (!_running) return;
+    NetworkInfoService.invalidateCache();
+    await _refreshLocalIps();
+    final sock = _socket;
+    if (sock == null) {
+      final gen = _lifecycleGen;
+      final ok = await _openAndAttachSocket(gen);
+      if (ok) {
+        _scheduleInitialBurst();
+      }
+      return;
+    }
+    await _joinMulticastOnLanInterfaces(sock);
   }
 
   Future<RawDatagramSocket> _bindDiscoverySocket() async {
@@ -194,8 +292,13 @@ class DiscoveryService {
   }
 
   Future<void> triggerBurst() async {
-    if (!_running || _socket == null || _myDevice == null) return;
-    await _refreshLocalIps();
+    if (!_running || _myDevice == null) return;
+    if (_socket == null) {
+      await refreshInterfacesAndMulticast();
+    } else {
+      await _refreshLocalIps();
+    }
+    if (_socket == null) return;
     _scheduleInitialBurst();
     if (!_isReceiver) {
       unawaited(_performSubnetSweep());
@@ -422,7 +525,11 @@ class DiscoveryService {
     String type, {
     Map<String, dynamic>? extra,
   }) async {
-    if (_socket == null || _myDevice == null) return;
+    if (!_running || _myDevice == null) return;
+    if (_socket == null) {
+      _scheduleSocketRebind(_lifecycleGen);
+      return;
+    }
 
     try {
       final localIps = await NetworkInfoService.getLocalIpAddresses();
@@ -438,10 +545,27 @@ class DiscoveryService {
       };
       final packetData = utf8.encode(jsonEncode(payload));
 
+      int sentAny = 0;
       for (final broadcastIp in broadcastIps) {
         try {
-          _socket?.send(packetData, InternetAddress(broadcastIp), discoveryPort);
+          final sent = _socket?.send(packetData, InternetAddress(broadcastIp), discoveryPort) ?? 0;
+          if (sent > 0) sentAny++;
         } catch (_) {}
+      }
+
+      if (sentAny == 0 && broadcastIps.isNotEmpty) {
+        _consecutiveSendFailures++;
+        if (_consecutiveSendFailures >= 3 && _running) {
+          debugPrint('[DiscoveryService] Repeated UDP send failures — rebinding discovery socket');
+          final dead = _socket;
+          _socket = null;
+          try {
+            dead?.close();
+          } catch (_) {}
+          _scheduleSocketRebind(_lifecycleGen);
+        }
+      } else {
+        _consecutiveSendFailures = 0;
       }
     } catch (e) {
       debugPrint('[DiscoveryService] Broadcast error: $e');
@@ -624,8 +748,11 @@ class DiscoveryService {
   }
 
   Future<void> stopDiscovery() async {
+    _lifecycleGen++;
     _running = false;
     _cancelBurstTimers();
+    _rebindTimer?.cancel();
+    _rebindTimer = null;
     _initialSweepDelayTimer?.cancel();
     _initialSweepDelayTimer = null;
 

@@ -139,6 +139,45 @@ void main() {
       expect(parsed.passphrase, 'OfflineKey99');
       expect(parsed.p2pIp, '192.168.49.1');
     });
+
+    test('encodes multi-interface altLanIps and deduplicates Windows 192.168.137.1 hotspot IP', () {
+      const winHotspot = DirectHotspotInfo(
+        ssid: 'DIRECT-S5-SnapW1N2',
+        passphrase: 'WinPass8',
+        goIp: '192.168.137.1',
+        port: 53318,
+      );
+      final qr = DirectP2pService.buildQrPayload(
+        lanIp: '192.168.1.3',
+        altLanIps: const ['192.168.1.3', '192.168.50.10', '192.168.137.1'],
+        port: 53318,
+        hotspot: winHotspot,
+        deviceId: 'ba045ba2',
+        deviceName: 'MSI',
+      );
+
+      final parsed = DirectP2pService.parseQrPayload(qr);
+      expect(parsed, isNotNull);
+      expect(parsed!.allLanIps, equals(['192.168.1.3', '192.168.50.10']));
+      expect(parsed.hasDirectCredentials, isTrue);
+      expect(parsed.ssid, 'DIRECT-S5-SnapW1N2');
+      expect(parsed.passphrase, 'WinPass8');
+      expect(parsed.p2pIp, '192.168.137.1');
+
+      // When PC has no router connection and localIp equals the soft-AP 192.168.137.1, mark p2pOnly=1
+      final offlineWinQr = DirectP2pService.buildQrPayload(
+        lanIp: '192.168.137.1',
+        altLanIps: const ['192.168.137.1'],
+        port: 53318,
+        hotspot: winHotspot,
+      );
+      final parsedOffline = DirectP2pService.parseQrPayload(offlineWinQr);
+      expect(parsedOffline, isNotNull);
+      expect(parsedOffline!.hasUsableLanIp, isFalse);
+      expect(parsedOffline.allLanIps, isEmpty);
+      expect(parsedOffline.hasDirectCredentials, isTrue);
+      expect(parsedOffline.p2pIp, '192.168.137.1');
+    });
   });
 
   group('DiscoveryService role filtering', () {

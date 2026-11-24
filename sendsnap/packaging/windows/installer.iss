@@ -2,7 +2,7 @@
 ; Produces a modern, professional setup wizard with automated firewall rule registration
 
 #define MyAppName "SendSnap"
-#define MyAppVersion "2.2.6"
+#define MyAppVersion "2.2.11"
 #define MyAppPublisher "The 356 Company"
 #define MyAppURL "https://sendsnap.com"
 #define MyAppExeName "sendsnap.exe"
@@ -63,8 +63,8 @@ Root: HKCR; Subkey: "Applications\{#MyAppExeName}\SupportedTypes"; ValueType: st
 Root: HKCR; Subkey: "Applications\{#MyAppExeName}\SupportedTypes"; ValueType: string; ValueName: ".zip"; ValueData: ""
 
 [Run]
-; 1. Automatically register Windows Defender Firewall inbound rule so P2P transfers are never blocked
-Filename: "netsh"; Parameters: "advfirewall firewall add rule name=""SendSnap Local Share"" dir=in action=allow program=""{app}\{#MyAppExeName}"" enable=yes"; Flags: runhidden
+; 1. Automatically register Windows Defender Firewall inbound rule across all profiles (Domain/Private/Public) so LAN & Direct Wi-Fi P2P transfers are never blocked
+Filename: "netsh"; Parameters: "advfirewall firewall add rule name=""SendSnap Local Share"" dir=in action=allow program=""{app}\{#MyAppExeName}"" profile=any enable=yes"; Flags: runhidden
 ; 2. Launch application after setup
 Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent
 

@@ -7,7 +7,7 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 DEB_DIR="$PROJECT_ROOT/build/deb_package"
 DIST_DIR="$PROJECT_ROOT/dist/linux"
 VERSION="$(grep -E '^version:' "$PROJECT_ROOT/pubspec.yaml" | head -n1 | sed -E 's/^version:[[:space:]]*//' | cut -d'+' -f1 | tr -d '\r' || true)"
-VERSION="${VERSION:-2.2.10}"
+VERSION="${VERSION:-2.2.11}"
 
 echo "=== Building SendSnap .deb Package (v${VERSION}) ==="
 

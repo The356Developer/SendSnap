@@ -21,6 +21,7 @@ class DeviceProvider with ChangeNotifier {
   Future<void>? _loadDisplayNameFuture;
 
   String? _localIp;
+  List<String> _localIps = const [];
   bool _isAdvertising = false;
   bool _isDiscovering = false;
   bool _isWarmDiscovering = false;
@@ -49,6 +50,7 @@ class DeviceProvider with ChangeNotifier {
 
   String get displayName => _displayName;
   String? get localIp => _localIp;
+  List<String> get localIps => _localIps;
   bool get isAdvertising => _isAdvertising;
   bool get getIsDiscovering => _isDiscovering;
   bool get isDiscovering => _isDiscovering;
@@ -73,7 +75,10 @@ class DeviceProvider with ChangeNotifier {
   bool get isWifiEnabled => _directStatus.wifiEnabled;
   bool get hasLanIp =>
       _localIp != null && _localIp!.isNotEmpty && _localIp != '0.0.0.0';
-  bool get hasDirectWifiReady => Platform.isAndroid && _directStatus.wifiEnabled;
+  bool get hasDirectWifiReady =>
+      (Platform.isAndroid || Platform.isWindows) &&
+      _directStatus.supported &&
+      _directStatus.wifiEnabled;
   bool get hasAnyNetworkReady => hasLanIp || hasDirectWifiReady;
   int get warmDiscoveredCount => _foundDevices.length;
 
@@ -89,9 +94,11 @@ class DeviceProvider with ChangeNotifier {
   }
 
   Future<void> _refreshLocalIp({bool forceRefresh = false}) async {
-    _localIp = await NetworkInfoService.getLocalIpAddress(
+    final ips = await NetworkInfoService.getLocalIpAddresses(
       forceRefresh: forceRefresh,
     );
+    _localIps = ips;
+    _localIp = ips.isNotEmpty ? ips.first : null;
     notifyListeners();
   }
 
@@ -99,9 +106,11 @@ class DeviceProvider with ChangeNotifier {
     if (forceRefresh) {
       NetworkInfoService.invalidateCache();
     }
-    _localIp = await NetworkInfoService.getLocalIpAddress(
+    final ips = await NetworkInfoService.getLocalIpAddresses(
       forceRefresh: forceRefresh,
     );
+    _localIps = ips;
+    _localIp = ips.isNotEmpty ? ips.first : null;
     _directStatus = await _nearbyService.directP2p.getDirectStatus();
     if (hasAnyNetworkReady && _lastError != null) {
       _lastError = null;
@@ -133,6 +142,9 @@ class DeviceProvider with ChangeNotifier {
 
     _nearbyService.onHotspotInfoChanged = (hotspot) {
       _activeHotspotInfo = hotspot;
+      if (hotspot != null && hotspot.isValid) {
+        unawaited(_refreshLocalIp(forceRefresh: true));
+      }
       notifyListeners();
     };
 
@@ -502,7 +514,13 @@ class DeviceProvider with ChangeNotifier {
 
   /// Pings a remote device by IP and adds it to discovered devices.
   Future<NearbyDevice?> connectAndGetDevice(String ip, {int port = 53318}) async {
-    final remoteDevice = await _nearbyService.httpClient.ping(ip, port);
+    await _nearbyService.directP2p.ensureLanWifiRouting(enable: true);
+    final remoteDevice = await _nearbyService.httpClient.pingWithRetry(
+      ip,
+      port,
+      maxAttempts: 2,
+      retryDelay: const Duration(milliseconds: 250),
+    );
     if (remoteDevice != null) {
       _foundDevices[remoteDevice.id] = remoteDevice;
       _nearbyService.addManualDevice(remoteDevice);

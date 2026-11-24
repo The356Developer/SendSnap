@@ -88,6 +88,8 @@ class WifiDirectManager(private val context: Context) {
     private var connectedGoIp: String? = null
     private var activeNetworkCallback: ConnectivityManager.NetworkCallback? = null
     private var boundNetwork: Network? = null
+    private var lanWifiBoundNetwork: Network? = null
+    private var lanWifiMonitorCallback: ConnectivityManager.NetworkCallback? = null
 
     // Callbacks to Flutter
     var onPeerFound: ((Map<String, Any>) -> Unit)? = null
@@ -1065,9 +1067,14 @@ class WifiDirectManager(private val context: Context) {
             DIRECT_SSID_REGEX.matches(ssid) &&
             passphrase.length in 8..63
 
-        // Path 1: Zero-dialog programmatic P2P connect on Android 10+
+        // Windows Wi-Fi Direct LegacySettings soft-AP uses 192.168.137.x (WPA2 infrastructure),
+        // not an Android WifiP2pManager group — skip the 6s P2P group wait and use WifiNetworkSpecifier directly.
+        val isWindowsSoftAp = goIp?.startsWith("192.168.137.") == true
+
+        // Path 1: Zero-dialog programmatic P2P connect on Android 10+ (Android-to-Android P2P GO)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q &&
             hasValidDirectCreds &&
+            !isWindowsSoftAp &&
             p2pManager != null &&
             p2pChannel != null &&
             hasP2pPermission()
@@ -1412,6 +1419,92 @@ class WifiDirectManager(private val context: Context) {
         })
     }
 
+    /**
+     * When Mobile Data is ON and the connected Wi-Fi / Hotspot lacks validated internet,
+     * Android routes 192.168.x.x sockets over Cellular unless bound to the active TRANSPORT_WIFI network.
+     */
+    fun ensureLanWifiRouting(enable: Boolean): Boolean {
+        val cm = connectivityManager ?: return false
+        if (!enable) {
+            lanWifiMonitorCallback?.let { cb ->
+                try {
+                    cm.unregisterNetworkCallback(cb)
+                } catch (_: Exception) {}
+            }
+            lanWifiMonitorCallback = null
+            if (lanWifiBoundNetwork != null && boundNetwork == null) {
+                try {
+                    cm.bindProcessToNetwork(null)
+                } catch (_: Exception) {}
+            }
+            lanWifiBoundNetwork = null
+            return true
+        }
+
+        // Never override an active Direct Wi-Fi specifier binding
+        if (boundNetwork != null) return true
+
+        try {
+            val active = cm.activeNetwork
+            val activeCaps = if (active != null) cm.getNetworkCapabilities(active) else null
+            if (activeCaps != null && activeCaps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)) {
+                // Default route is already Wi-Fi; clear any stale manual LAN bind
+                if (lanWifiBoundNetwork != null) {
+                    cm.bindProcessToNetwork(null)
+                    lanWifiBoundNetwork = null
+                }
+                return true
+            }
+
+            // Default route is Cellular/VPN (or null) — check if a connected Wi-Fi network exists!
+            var candidateWifi: Network? = null
+            for (net in cm.allNetworks) {
+                val caps = cm.getNetworkCapabilities(net) ?: continue
+                if (caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)) {
+                    candidateWifi = net
+                    break
+                }
+            }
+
+            if (candidateWifi != null) {
+                val targetNet = candidateWifi
+                cm.bindProcessToNetwork(targetNet)
+                lanWifiBoundNetwork = targetNet
+                Log.d(TAG, "Bound process to unvalidated Wi-Fi network for local LAN routing")
+
+                if (lanWifiMonitorCallback == null) {
+                    val req = NetworkRequest.Builder()
+                        .addTransportType(NetworkCapabilities.TRANSPORT_WIFI)
+                        .build()
+                    val monitor = object : ConnectivityManager.NetworkCallback() {
+                        override fun onLost(network: Network) {
+                            mainHandler.post {
+                                if (lanWifiBoundNetwork == network) {
+                                    lanWifiBoundNetwork = null
+                                    if (boundNetwork == null) {
+                                        try {
+                                            cm.bindProcessToNetwork(null)
+                                        } catch (_: Exception) {}
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    lanWifiMonitorCallback = monitor
+                    try {
+                        cm.registerNetworkCallback(req, monitor)
+                    } catch (_: Exception) {
+                        lanWifiMonitorCallback = null
+                    }
+                }
+                return true
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "ensureLanWifiRouting warning: ${e.message}")
+        }
+        return false
+    }
+
     private fun unregisterSpecifierNetwork() {
         val cm = connectivityManager
         if (cm != null) {
@@ -1445,6 +1538,7 @@ class WifiDirectManager(private val context: Context) {
     }
 
     fun dispose() {
+        ensureLanWifiRouting(false)
         stopDiscovery()
         stopAdvertising()
         disconnectDirect()
